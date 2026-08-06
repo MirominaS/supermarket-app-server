@@ -1,0 +1,314 @@
+import mongoose from "mongoose";
+import User from "../models/user.model.js";
+import Order from "../models/order.model.js";
+import Sale from "../models/sale.model.js";
+
+export const getCustomersService = async ({
+  page = 1,
+  limit = 10,
+  search,
+  isActive,
+}) => {
+  page = Number(page);
+  limit = Number(limit);
+
+  if (!Number.isInteger(page) || page < 1) {
+    throw new Error("Page must be a positive integer.");
+  }
+
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error("Limit must be a positive integer.");
+  }
+
+  const filter = {
+    role: "CUSTOMER",
+  };
+
+  // Search customer
+  if (search) {
+    filter.$or = [
+      {
+        fullName: {
+          $regex: search,
+          $options: "i",
+        },
+      },
+      {
+        email: {
+          $regex: search,
+          $options: "i",
+        },
+      },
+      {
+        phoneNumber: {
+          $regex: search,
+          $options: "i",
+        },
+      },
+    ];
+  }
+
+  // Active/inactive filter
+  if (isActive !== undefined) {
+    if (isActive !== "true" && isActive !== "false") {
+      throw new Error(
+        "isActive must be true or false."
+      );
+    }
+
+    filter.isActive = isActive === "true";
+  }
+
+  const total = await User.countDocuments(filter);
+
+  const customers = await User.find(filter)
+    .select("-password")
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit);
+
+  return {
+    customers,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      hasNext: page * limit < total,
+      hasPrev: page > 1,
+    },
+  };
+};
+
+export const getCustomerByIdService = async (
+  customerId
+) => {
+  if (!mongoose.Types.ObjectId.isValid(customerId)) {
+    throw new Error("Invalid customer ID.");
+  }
+
+  const customer = await User.findOne({
+    _id: customerId,
+    role: "CUSTOMER",
+  }).select("-password");
+
+  if (!customer) {
+    throw new Error("Customer not found.");
+  }
+
+  return customer;
+};
+
+export const getCustomerOrdersService = async ({
+  customerId,
+  page = 1,
+  limit = 10,
+}) => {
+  if (!mongoose.Types.ObjectId.isValid(customerId)) {
+    throw new Error("Invalid customer ID.");
+  }
+
+  page = Number(page);
+  limit = Number(limit);
+
+  const customer = await User.findOne({
+    _id: customerId,
+    role: "CUSTOMER",
+  });
+
+  if (!customer) {
+    throw new Error("Customer not found.");
+  }
+
+  const filter = {
+    customer: customerId,
+  };
+
+  const total = await Order.countDocuments(filter);
+
+  const orders = await Order.find(filter)
+    .populate(
+      "items.product",
+      "name sku price"
+    )
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit);
+
+  return {
+    orders,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      hasNext: page * limit < total,
+      hasPrev: page > 1,
+    },
+  };
+};
+
+export const getCustomerSalesService = async ({
+  customerId,
+  page = 1,
+  limit = 10,
+}) => {
+  if (!mongoose.Types.ObjectId.isValid(customerId)) {
+    throw new Error("Invalid customer ID.");
+  }
+
+  page = Number(page);
+  limit = Number(limit);
+
+  const customer = await User.findOne({
+    _id: customerId,
+    role: "CUSTOMER",
+  });
+
+  if (!customer) {
+    throw new Error("Customer not found.");
+  }
+
+  const filter = {
+    customer: customerId,
+  };
+
+  const total = await Sale.countDocuments(filter);
+
+  const sales = await Sale.find(filter)
+    .populate(
+      "order",
+      "orderNumber status"
+    )
+    .populate(
+      "items.product",
+      "name sku price"
+    )
+    .sort({ soldAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit);
+
+  return {
+    sales,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      hasNext: page * limit < total,
+      hasPrev: page > 1,
+    },
+  };
+};
+
+export const getCustomerSummaryService = async (
+  customerId
+) => {
+  if (!mongoose.Types.ObjectId.isValid(customerId)) {
+    throw new Error("Invalid customer ID.");
+  }
+
+  const customer = await User.findOne({
+    _id: customerId,
+    role: "CUSTOMER",
+  }).select("-password");
+
+  if (!customer) {
+    throw new Error("Customer not found.");
+  }
+
+  const orderSummary = await Order.aggregate([
+    {
+      $match: {
+        customer: new mongoose.Types.ObjectId(
+          customerId
+        ),
+      },
+    },
+    {
+      $group: {
+        _id: null,
+
+        totalOrders: {
+          $sum: 1,
+        },
+
+        totalOrderValue: {
+          $sum: "$total",
+        },
+      },
+    },
+  ]);
+
+  const saleSummary = await Sale.aggregate([
+    {
+      $match: {
+        customer: new mongoose.Types.ObjectId(
+          customerId
+        ),
+      },
+    },
+    {
+      $group: {
+        _id: null,
+
+        totalPurchases: {
+          $sum: 1,
+        },
+
+        totalSpent: {
+          $sum: "$total",
+        },
+      },
+    },
+  ]);
+
+  return {
+    customer,
+
+    summary: {
+      totalOrders:
+        orderSummary[0]?.totalOrders || 0,
+
+      totalOrderValue:
+        orderSummary[0]?.totalOrderValue || 0,
+
+      totalPurchases:
+        saleSummary[0]?.totalPurchases || 0,
+
+      totalSpent:
+        saleSummary[0]?.totalSpent || 0,
+    },
+  };
+};
+
+export const updateCustomerStatusService = async (
+  customerId,
+  isActive
+) => {
+  if (!mongoose.Types.ObjectId.isValid(customerId)) {
+    throw new Error("Invalid customer ID.");
+  }
+
+  if (typeof isActive !== "boolean") {
+    throw new Error(
+      "isActive must be a boolean."
+    );
+  }
+
+  const customer = await User.findOne({
+    _id: customerId,
+    role: "CUSTOMER",
+  });
+
+  if (!customer) {
+    throw new Error("Customer not found.");
+  }
+
+  customer.isActive = isActive;
+
+  await customer.save();
+
+  return await User.findById(customer._id)
+    .select("-password");
+};
