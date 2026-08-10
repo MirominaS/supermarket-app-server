@@ -74,15 +74,46 @@ const validateOfferItems = async (type, items) => {
     });
 
     if (!variant) {
-      throw new Error(
-        `Variant does not belong to product "${product.name}".`,
-      );
+      throw new Error(`Variant does not belong to product "${product.name}".`);
     }
 
     if (item.price > variant.price) {
       throw new Error(
         `Offer price cannot exceed normal price of ${variant.name}.`,
       );
+    }
+  }
+};
+
+const checkDuplicateOffer = async ({
+  name,
+  type,
+  startDate,
+  endDate,
+  items,
+}) => {
+  const variantIds = items.map((item) => item.variant.toString());
+
+  const existingOffers = await Offer.find({
+    name: name.trim(),
+    type,
+    isActive: true,
+
+    // Date ranges overlap
+    startDate: { $lt: endDate },
+    endDate: { $gt: startDate },
+  });
+
+  for (const offer of existingOffers) {
+    const existingVariantIds = offer.items.map((item) =>
+      item.variant.toString(),
+    );
+
+    if (
+      existingVariantIds.length === variantIds.length &&
+      existingVariantIds.every((id) => variantIds.includes(id))
+    ) {
+      throw new Error("An identical offer already exists for this period.");
     }
   }
 };
@@ -106,8 +137,17 @@ export const createOfferService = async ({
 
   await validateOfferItems(type, items);
 
-  const offer = await Offer.create({
+  // Prevent duplicate offer
+  await checkDuplicateOffer({
     name,
+    type,
+    startDate: start,
+    endDate: end,
+    items,
+  });
+
+  const offer = await Offer.create({
+    name: name.trim(),
     type,
     startDate: start,
     endDate: end,
@@ -126,7 +166,7 @@ export const createOfferService = async ({
         recipient: customer._id,
         title: "New Offer Available",
         message: `${offer.name} is now available. Check it out before it expires!`,
-        type: "OFFER",
+        type: "PROMOTION",
         data: {
           offerId: offer._id,
         },
@@ -145,9 +185,7 @@ export const createOfferService = async ({
 };
 
 export const getOffersService = async () => {
-  return await Offer.find({
-    isActive: true,
-  })
+  return await Offer.find()
     .populate({
       path: "items.product",
       populate: {
@@ -163,7 +201,6 @@ export const getOffersService = async () => {
 export const getOfferByIdService = async (offerId) => {
   const offer = await Offer.findOne({
     _id: offerId,
-    isActive: true,
   })
     .populate({
       path: "items.product",
@@ -181,63 +218,76 @@ export const getOfferByIdService = async (offerId) => {
 };
 
 export const updateOfferService = async (offerId, updateData) => {
-  const offer = await Offer.findOne({
-    _id: offerId,
-    isActive: true,
-  });
+  const offer = await Offer.findById(offerId);
 
   if (!offer) {
     throw new Error("Offer not found.");
   }
 
   const name = updateData.name ?? offer.name;
-
   const type = updateData.type ?? offer.type;
-
   const startDate = updateData.startDate ?? offer.startDate;
-
   const endDate = updateData.endDate ?? offer.endDate;
-
   const items = updateData.items ?? offer.items;
 
-  if (!name) {
+  // Validate name
+  if (!name || !name.trim()) {
     throw new Error("Offer name is required.");
   }
 
+  // Validate type
   if (!["SINGLE", "COMBO"].includes(type)) {
     throw new Error("Offer type must be SINGLE or COMBO.");
   }
 
-  const { start, end } = validateOfferDates(startDate, endDate);
+  // Validate dates
+  const { start, end } = validateOfferDates(
+    startDate,
+    endDate,
+  );
 
+  // Validate items
   await validateOfferItems(type, items);
 
-  offer.name = name;
+  // Update offer
+  offer.name = name.trim();
   offer.type = type;
   offer.startDate = start;
   offer.endDate = end;
   offer.items = items;
 
+  // Allow admin to update active status
+  if (updateData.isActive !== undefined) {
+    if (typeof updateData.isActive !== "boolean") {
+      throw new Error("isActive must be true or false.");
+    }
+
+    offer.isActive = updateData.isActive;
+  }
+
   await offer.save();
 
-  const customers = await User.find({
-    role: "CUSTOMER",
-    isActive: true,
-  }).select("_id");
+  // Only notify customers when offer is active
+  if (offer.isActive) {
+    const customers = await User.find({
+      role: "CUSTOMER",
+      isActive: true,
+    }).select("_id");
 
-  await Promise.all(
-    customers.map((customer) =>
-      createNotification({
-        recipient: customer._id,
-        title: "Offer Updated",
-        message: `${offer.name} has been updated.`,
-        type: "OFFER",
-        data: {
-          offerId: offer._id,
-        },
-      }),
-    ),
-  );
+    await Promise.all(
+      customers.map((customer) =>
+        createNotification({
+          recipient: customer._id,
+          title: "Offer Updated",
+          message: `${offer.name} has been updated.`,
+          type: "PROMOTION",
+          data: {
+            offerId: offer._id,
+          },
+        }),
+      ),
+    );
+  }
 
   return await Offer.findById(offer._id)
     .populate({
@@ -250,18 +300,15 @@ export const updateOfferService = async (offerId, updateData) => {
 };
 
 export const deleteOfferService = async (offerId) => {
-  const offer = await Offer.findOne({
-    _id: offerId,
-    isActive: true,
-  });
+  const offer = await Offer.findById(offerId);
 
   if (!offer) {
     throw new Error("Offer not found.");
   }
 
-  offer.isActive = false;
+  await Offer.findByIdAndDelete(offerId);
 
-  await offer.save();
-
-  return offer;
+  return {
+    message: "Offer deleted permanently.",
+  };
 };
