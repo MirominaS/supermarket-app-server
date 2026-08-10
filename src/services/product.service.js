@@ -24,11 +24,53 @@ export const createProductService = async (productData) => {
     }
   }
 
+  const hasVariants = productData.hasVariants === true;
+
+  // If product does NOT have variants,
+  // price, costPrice, stock and unit are required.
+  if (!hasVariants) {
+    if (productData.price === undefined || productData.price === null) {
+      throw new Error("Price is required for a product without variants.");
+    }
+
+    if (productData.stock === undefined || productData.stock === null) {
+      throw new Error("Stock is required for a product without variants.");
+    }
+
+    if (!productData.unit) {
+      throw new Error("Unit is required for a product without variants.");
+    }
+
+    if (productData.price < 0) {
+      throw new Error("Price cannot be negative.");
+    }
+
+    if (productData.stock < 0) {
+      throw new Error("Stock cannot be negative.");
+    }
+
+    if (
+      productData.costPrice !== undefined &&
+      productData.costPrice !== null &&
+      productData.costPrice < 0
+    ) {
+      throw new Error("Cost price cannot be negative.");
+    }
+  }
+
   const product = await Product.create({
     name: productData.name,
     description: productData.description,
     category: productData.category,
     image: productData.image,
+
+    hasVariants,
+
+    // Only store these for variant-less products
+    price: hasVariants ? null : productData.price,
+    costPrice: hasVariants ? null : (productData.costPrice ?? 0),
+    stock: hasVariants ? null : productData.stock,
+    unit: hasVariants ? null : productData.unit,
   });
 
   return await Product.findById(product._id)
@@ -47,12 +89,16 @@ export const getProductsService = async () => {
   const result = [];
 
   for (const product of products) {
-    const variants = await ProductVariant.find({
-      product: product._id,
-      isActive: true,
-    }).sort({
-      createdAt: 1,
-    });
+    let variants = [];
+
+    if (product.hasVariants) {
+      variants = await ProductVariant.find({
+        product: product._id,
+        isActive: true,
+      }).sort({
+        createdAt: 1,
+      });
+    }
 
     result.push({
       ...product.toObject(),
@@ -72,11 +118,16 @@ export const getProductByIdService = async (productId) => {
     throw new Error("Product not found.");
   }
 
-  const variants = await ProductVariant.find({
-    product: product._id,
-  }).sort({
-    createdAt: 1,
-  });
+  let variants = [];
+
+  if (product.hasVariants) {
+    variants = await ProductVariant.find({
+      product: product._id,
+      isActive: true,
+    }).sort({
+      createdAt: 1,
+    });
+  }
 
   return {
     ...product.toObject(),
@@ -114,16 +165,72 @@ export const updateProductService = async (productId, updateData) => {
     }
   }
 
+  // Do not allow changing hasVariants here
+  if (updateData.hasVariants !== undefined) {
+    throw new Error("Product variant type cannot be changed after creation.");
+  }
+
+  // Basic fields
   product.name = updateData.name ?? product.name;
-
   product.description = updateData.description ?? product.description;
-
   product.category = updateData.category ?? product.category;
-
   product.image = updateData.image ?? product.image;
 
+  // Update active status
   if (typeof updateData.isActive === "boolean") {
     product.isActive = updateData.isActive;
+  }
+
+  // PRODUCTS WITHOUT VARIANTS
+  if (!product.hasVariants) {
+    if (updateData.price !== undefined && updateData.price !== null) {
+      if (updateData.price < 0) {
+        throw new Error("Price cannot be negative.");
+      }
+
+      product.price = updateData.price;
+    }
+
+    if (updateData.costPrice !== undefined && updateData.costPrice !== null) {
+      if (updateData.costPrice < 0) {
+        throw new Error("Cost price cannot be negative.");
+      }
+
+      product.costPrice = updateData.costPrice;
+    }
+
+    if (updateData.stock !== undefined && updateData.stock !== null) {
+      if (updateData.stock < 0) {
+        throw new Error("Stock cannot be negative.");
+      }
+
+      product.stock = updateData.stock;
+    }
+
+    if (updateData.unit !== undefined) {
+      const unit = updateData.unit.trim();
+
+      if (!unit) {
+        throw new Error("Unit is required.");
+      }
+
+      product.unit = unit;
+    }
+  }
+
+  // PRODUCTS WITH VARIANT
+  if (product.hasVariants) {
+
+    if (
+      updateData.price !== undefined ||
+      updateData.costPrice !== undefined ||
+      updateData.stock !== undefined ||
+      updateData.unit !== undefined
+    ) {
+      throw new Error(
+        "Price, cost price, stock and unit must be managed through product variants.",
+      );
+    }
   }
 
   await product.save();
