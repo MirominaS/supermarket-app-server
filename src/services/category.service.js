@@ -1,4 +1,5 @@
 import Category from "../models/category.model.js";
+import Product from "../models/product.model.js";
 
 export const createCategoryService = async (categoryData) => {
   const existingCategory = await Category.findOne({
@@ -60,7 +61,22 @@ export const deleteCategoryService = async (categoryId) => {
     throw new Error("Category not found.");
   }
 
+  // Check whether products are using this category
+  const productCount = await Product.countDocuments({
+    category: categoryId,
+  });
+
+  if (productCount > 0) {
+    throw new Error(
+      `Cannot delete this category because ${productCount} product${
+        productCount > 1 ? "s are" : " is"
+      } assigned to it.`,
+    );
+  }
+
   await category.deleteOne();
 
-  return category;
+  return {
+    message: "Category deleted successfully.",
+  };
 };
