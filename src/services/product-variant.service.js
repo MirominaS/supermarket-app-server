@@ -17,6 +17,7 @@ const validateProduct = async (productId) => {
   return product;
 };
 
+//create variant
 export const createVariantService = async (productId, variantData) => {
   await validateProduct(productId);
 
@@ -59,27 +60,20 @@ export const createVariantService = async (productId, variantData) => {
 
   const variant = await ProductVariant.create({
     product: productId,
-
     name: variantData.name,
-
     sku: variantData.sku,
-
     barcode: variantData.barcode,
-
     price: variantData.price,
-
     costPrice: variantData.costPrice,
-
     stock: variantData.stock,
-
     unit: variantData.unit,
-
     isDefault: variantData.isDefault,
   });
 
   return variant;
 };
 
+//get all variants
 export const getVariantsService = async (productId) => {
   await validateProduct(productId);
 
@@ -90,6 +84,28 @@ export const getVariantsService = async (productId) => {
   });
 };
 
+// get variant by id
+export const getVariantByIdService = async (productId, variantId) => {
+  
+  await validateProduct(productId);
+
+  if (!mongoose.Types.ObjectId.isValid(variantId)) {
+    throw new Error("Invalid variant ID.");
+  }
+
+  const variant = await ProductVariant.findOne({
+    _id: variantId,
+    product: productId,
+  });
+
+  if (!variant) {
+    throw new Error("Variant not found.");
+  }
+
+  return variant;
+};
+
+// update variant
 export const updateVariantService = async (
   productId,
   variantId,
@@ -154,6 +170,7 @@ export const updateVariantService = async (
   return variant;
 };
 
+//delete variant
 export const deleteVariantService = async (productId, variantId) => {
   await validateProduct(productId);
 
