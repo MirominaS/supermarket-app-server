@@ -24,13 +24,15 @@ export const getCustomerProductsService = async ({
     isActive: true,
   };
 
+  // Search
   if (search) {
     filter.name = {
-      $regex: search,
+      $regex: search.trim(),
       $options: "i",
     };
   }
 
+  // Category filter
   if (category) {
     if (!mongoose.Types.ObjectId.isValid(category)) {
       throw new Error("Invalid category.");
@@ -38,27 +40,75 @@ export const getCustomerProductsService = async ({
 
     filter.category = category;
   }
+  
+  const availableVariantProducts =
+    await ProductVariant.distinct("product", {
+      isActive: true,
+      stock: {
+        $gt: 0,
+      },
+    });
 
+ filter.$or = [
+  // Products without variants
+  {
+    hasVariants: {
+      $ne: true,
+    },
+    stock: {
+      $gt: 0,
+    },
+  },
+
+  // Products with variants
+  {
+    hasVariants: true,
+    _id: {
+      $in: availableVariantProducts,
+    },
+  },
+];
+
+  // Sorting
   let sortOption = {
     createdAt: -1,
   };
 
   switch (sort) {
+    case "newest":
+      sortOption = {
+        createdAt: -1,
+      };
+      break;
+
     case "oldest":
-      sortOption = { createdAt: 1 };
+      sortOption = {
+        createdAt: 1,
+      };
       break;
 
     case "name_asc":
-      sortOption = { name: 1 };
+      sortOption = {
+        name: 1,
+      };
       break;
 
     case "name_desc":
-      sortOption = { name: -1 };
+      sortOption = {
+        name: -1,
+      };
       break;
+
+    default:
+      throw new Error(
+        "Invalid sort option. Use newest, oldest, name_asc or name_desc."
+      );
   }
 
+  // Count available products
   const total = await Product.countDocuments(filter);
 
+  // Get products
   const products = await Product.find(filter)
     .populate("category")
     .populate("image")
@@ -69,18 +119,19 @@ export const getCustomerProductsService = async ({
   const result = [];
 
   for (const product of products) {
-    const variants = await ProductVariant.find({
-      product: product._id,
-      isActive: true,
-      stock: {
-        $gt: 0,
-      },
-    }).sort({
-      price: 1,
-    });
+    let variants = [];
 
-    if (variants.length === 0) {
-      continue;
+    // Only get variants for products that actually have variants
+    if (product.hasVariants) {
+      variants = await ProductVariant.find({
+        product: product._id,
+        isActive: true,
+        stock: {
+          $gt: 0,
+        },
+      }).sort({
+        price: 1,
+      });
     }
 
     result.push({
@@ -89,20 +140,21 @@ export const getCustomerProductsService = async ({
     });
   }
 
+  const totalPages = Math.ceil(total / limit);
+
   return {
     products: result,
 
     pagination: {
-      total: result.length,
+      total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit),
-      hasNext: page < Math.ceil(total / limit),
+      totalPages,
+      hasNext: page < totalPages,
       hasPrev: page > 1,
     },
   };
 };
-
 export const getCustomerProductByIdService = async (productId) => {
   if (!mongoose.Types.ObjectId.isValid(productId)) {
     throw new Error("Invalid product ID.");
@@ -119,15 +171,31 @@ export const getCustomerProductByIdService = async (productId) => {
     throw new Error("Product not found.");
   }
 
-  const variants = await ProductVariant.find({
-    product: product._id,
-    isActive: true,
-    stock: {
-      $gt: 0,
-    },
-  }).sort({
-    price: 1,
-  });
+  let variants = [];
+
+  if (product.hasVariants) {
+    variants = await ProductVariant.find({
+      product: product._id,
+      isActive: true,
+      stock: {
+        $gt: 0,
+      },
+    }).sort({
+      price: 1,
+    });
+  }
+
+  // Product without variants
+  if (!product.hasVariants) {
+    if (!product.stock || product.stock <= 0) {
+      throw new Error("Product is out of stock.");
+    }
+  }
+
+  // Product with variants but no available variants
+  if (product.hasVariants && variants.length === 0) {
+    throw new Error("Product is out of stock.");
+  }
 
   return {
     ...product.toObject(),
