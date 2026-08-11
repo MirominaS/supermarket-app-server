@@ -79,7 +79,7 @@ router.post(
   authenticate,
   authorizeRoles("CUSTOMER"),
   requestChangeEmailOtp,
-);
+); 
 
 router.post(
   "/change-email/verify",

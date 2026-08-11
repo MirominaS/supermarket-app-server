@@ -15,6 +15,11 @@ export const createProduct = async (req, res) => {
       description,
       category,
       imageId,
+      hasVariants,
+      price,
+      costPrice,
+      stock,
+      unit,
     } = req.body;
 
     if (!name || !category) {
@@ -36,6 +41,11 @@ export const createProduct = async (req, res) => {
       description,
       category,
       image: imageId,
+      hasVariants,
+      price,
+      costPrice,
+      stock,
+      unit,
     });
 
     return res.status(201).json({

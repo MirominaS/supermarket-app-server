@@ -3,6 +3,7 @@ import express from "express";
 import {
   createVariant,
   getVariants,
+  getVariantById,
   updateVariant,
   deleteVariant,
 } from "../controllers/product-variant.controller.js";
@@ -20,6 +21,9 @@ router.use(authorizeRoles("ADMIN"));
 
 // Get all variants of a product
 router.get("/", getVariants);
+
+// Get variant by ID
+router.get("/:variantId", getVariantById);
 
 // Create variant
 router.post("/", createVariant);

@@ -10,6 +10,7 @@ import {
 import { normalizePhoneNumber } from "../utils/phone.helper.js";
 import { OAuth2Client } from "google-auth-library";
 import { createNotification } from "./notification.service.js";
+import { validatePassword } from "../utils/password.helper.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -50,9 +51,7 @@ export const requestCustomerRegistrationOtp = async ({
     throw new Error("Password and confirm password do not match.");
   }
 
-  if (password.length < 6) {
-    throw new Error("Password must be at least 6 characters long.");
-  }
+  validatePassword(password);
 
   // Check existing email
   const existingEmail = await User.findOne({
@@ -372,9 +371,7 @@ export const resetForgotPasswordService = async ({
     throw new Error("New password and confirm password do not match.");
   }
 
-  if (newPassword.length < 6) {
-    throw new Error("Password must be at least 6 characters long.");
-  }
+  validatePassword(newPassword);
 
   // Validate OTP
   const forgotPasswordOtp = await validateOtp({
@@ -437,9 +434,7 @@ export const changePasswordService = async (
     throw new Error("New password and confirm password do not match.");
   }
 
-  if (newPassword.length < 6) {
-    throw new Error("Password must be at least 6 characters long.");
-  }
+  validatePassword(newPassword);
 
   // Find customer
   const customer = await User.findOne({
@@ -449,6 +444,12 @@ export const changePasswordService = async (
 
   if (!customer) {
     throw new Error("Customer not found.");
+  }
+
+  if (!customer.password) {
+    throw new Error(
+      "This account uses Google Sign-In. Password changes are not available.",
+    );
   }
 
   // Verify current password
@@ -725,13 +726,12 @@ export const requestChangePhoneOtpService = async (userId, { phoneNumber }) => {
     email: customer.email,
     purpose: "CHANGE_PHONE",
     verificationType: "EMAIL",
-
     data: {
-      phoneNumber: normalizedPhoneNumber,
+      newPhoneNumber: normalizedPhoneNumber,
     },
   });
 
-  // Send email
+  // Send OTP
   await sendOtpEmail({
     recipientEmail: customer.email,
     recipientName: customer.fullName,
