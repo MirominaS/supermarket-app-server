@@ -3,19 +3,46 @@ import Cart from "../models/cart.model.js";
 import Product from "../models/product.model.js";
 import ProductVariant from "../models/product-variant.model.js";
 
+const getCartOwnerQuery = ({ customerId, guestId }) => {
+  if (!customerId && !guestId) {
+    throw new Error("Customer ID or Guest ID is required.");
+  }
+
+  if (customerId && guestId) {
+    throw new Error("Cart cannot belong to both customer and guest.");
+  }
+
+  if (customerId) {
+    if (!mongoose.Types.ObjectId.isValid(customerId)) {
+      throw new Error("Invalid customer ID.");
+    }
+
+    return {
+      customer: customerId,
+    };
+  }
+
+  return {
+    guestId,
+  };
+};
+
 export const addToCartService = async ({
   customerId,
+  guestId,
   productId,
   variantId,
   quantity,
 }) => {
-  // Validate IDs
+  // Validate cart owner
+  const cartOwnerQuery = getCartOwnerQuery({
+    customerId,
+    guestId,
+  });
+
+  // Validate product ID
   if (!mongoose.Types.ObjectId.isValid(productId)) {
     throw new Error("Invalid product ID.");
-  }
-
-  if (!mongoose.Types.ObjectId.isValid(variantId)) {
-    throw new Error("Invalid variant ID.");
   }
 
   // Validate quantity
@@ -33,56 +60,83 @@ export const addToCartService = async ({
     throw new Error("Product not found.");
   }
 
-  // Check variant
-  const variant = await ProductVariant.findOne({
-    _id: variantId,
-    product: productId,
-    isActive: true,
-  });
+  let variant = null;
 
-  if (!variant) {
-    throw new Error("Product variant not found.");
+  // Product has a variant
+  if (variantId) {
+    // Validate variant ID
+    if (!mongoose.Types.ObjectId.isValid(variantId)) {
+      throw new Error("Invalid variant ID.");
+    }
+
+    // Check variant
+    variant = await ProductVariant.findOne({
+      _id: variantId,
+      product: productId,
+      isActive: true,
+    });
+
+    if (!variant) {
+      throw new Error("Product variant not found.");
+    }
+
+    // Check variant stock
+    if (variant.stock < quantity) {
+      throw new Error(
+        `Only ${variant.stock} item(s) available for ${variant.name}.`,
+      );
+    }
+  } else {
+    // Product does not have a variant
+    if (product.hasVariants) {
+      throw new Error("Variant ID is required for this product.");
+    }
+
+    // Check product stock
+    if (product.stock < quantity) {
+      throw new Error(
+        `Only ${product.stock} item(s) available for ${product.name}.`,
+      );
+    }
   }
 
-  // Check stock
-  if (variant.stock < quantity) {
-    throw new Error(
-      `Only ${variant.stock} item(s) available for ${variant.name}.`,
-    );
-  }
-
-  // Find customer's cart
-  let cart = await Cart.findOne({
-    customer: customerId,
-  });
+  // Find customer's or guest's cart
+  let cart = await Cart.findOne(cartOwnerQuery);
 
   // Create cart if it doesn't exist
   if (!cart) {
     cart = await Cart.create({
-      customer: customerId,
+      ...(customerId ? { customer: customerId } : {}),
+      ...(guestId ? { guestId } : {}),
       items: [],
     });
   }
-  const existingItem = cart.items.find(
-    (item) =>
-      item.product.toString() === productId &&
-      item.variant.toString() === variantId,
-  );
+
+  // Check whether product + variant already exists
+  const existingItem = cart.items.find((item) => {
+    const sameProduct = item.product.toString() === productId;
+
+    const sameVariant = variantId
+      ? item.variant?.toString() === variantId
+      : !item.variant;
+
+    return sameProduct && sameVariant;
+  });
 
   if (existingItem) {
     const newQuantity = existingItem.quantity + quantity;
 
-    if (newQuantity > variant.stock) {
-      throw new Error(
-        `Only ${variant.stock} item(s) available for ${variant.name}.`,
-      );
+    const availableStock = variant ? variant.stock : product.stock;
+
+    if (newQuantity > availableStock) {
+      throw new Error(`Only ${availableStock} item(s) available.`);
     }
 
     existingItem.quantity = newQuantity;
   } else {
     cart.items.push({
       product: productId,
-      variant: variantId,
+      variant: variantId || null,
       quantity,
     });
   }
@@ -99,23 +153,28 @@ export const addToCartService = async ({
     .populate("items.variant");
 };
 
-export const getCartService = async (customerId) => {
-  let cart = await Cart.findOne({
-    customer: customerId,
-  }).populate({
-    path: "items.product",
-    match: {
-      isActive: true,
-    },
-    populate: [
-      {
-        path: "image",
-      },
-      {
-        path: "category",
-      },
-    ],
+export const getCartService = async ({ customerId, guestId }) => {
+  const cartOwnerQuery = getCartOwnerQuery({
+    customerId,
+    guestId,
   });
+
+  const cart = await Cart.findOne(cartOwnerQuery)
+    .populate({
+      path: "items.product",
+      match: {
+        isActive: true,
+      },
+      populate: [
+        {
+          path: "image",
+        },
+        {
+          path: "category",
+        },
+      ],
+    })
+    .populate("items.variant");
 
   if (!cart) {
     return {
@@ -126,7 +185,9 @@ export const getCartService = async (customerId) => {
   }
 
   // Remove deleted/inactive products
-  const validItems = cart.items.filter((item) => item.product && item.variant);
+  const validItems = cart.items.filter(
+    (item) => item.product && (item.variant || item.variant === null),
+  );
 
   let totalItems = 0;
   let subtotal = 0;
@@ -134,7 +195,11 @@ export const getCartService = async (customerId) => {
   for (const item of validItems) {
     totalItems += item.quantity;
 
-    subtotal += item.variant.price * item.quantity;
+    if (item.variant) {
+      subtotal += item.variant.price * item.quantity;
+    } else {
+      subtotal += item.product.price * item.quantity;
+    }
   }
 
   return {
@@ -147,17 +212,19 @@ export const getCartService = async (customerId) => {
 
 export const updateCartItemService = async ({
   customerId,
+  guestId,
   productId,
   variantId,
   quantity,
 }) => {
-  // Validate IDs
+  const cartOwnerQuery = getCartOwnerQuery({
+    customerId,
+    guestId,
+  });
+
+  // Validate product ID
   if (!mongoose.Types.ObjectId.isValid(productId)) {
     throw new Error("Invalid product ID.");
-  }
-
-  if (!mongoose.Types.ObjectId.isValid(variantId)) {
-    throw new Error("Invalid variant ID.");
   }
 
   // Validate quantity
@@ -165,24 +232,35 @@ export const updateCartItemService = async ({
     throw new Error("Quantity must be a positive integer.");
   }
 
+  // If variantId exists, validate it
+  if (
+    variantId &&
+    !mongoose.Types.ObjectId.isValid(variantId)
+  ) {
+    throw new Error("Invalid variant ID.");
+  }
+
   // Find cart
-  const cart = await Cart.findOne({
-    customer: customerId,
-  });
+  const cart = await Cart.findOne(cartOwnerQuery);
 
   if (!cart) {
     throw new Error("Cart not found.");
   }
 
   // Find cart item
-  const item = cart.items.find(
-    (item) =>
-      item.product.toString() === productId &&
-      item.variant.toString() === variantId,
-  );
+  const item = cart.items.find((item) => {
+    const sameProduct =
+      item.product.toString() === productId;
+
+    const sameVariant = variantId
+      ? item.variant?.toString() === variantId
+      : !item.variant;
+
+    return sameProduct && sameVariant;
+  });
 
   if (!item) {
-    throw new Error("Product variant not found in cart.");
+    throw new Error("Product not found in cart.");
   }
 
   // Validate product
@@ -195,21 +273,30 @@ export const updateCartItemService = async ({
     throw new Error("Product not found.");
   }
 
-  // Validate variant
-  const variant = await ProductVariant.findOne({
-    _id: variantId,
-    product: productId,
-    isActive: true,
-  });
+  let variant = null;
 
-  if (!variant) {
-    throw new Error("Product variant not found.");
+  // Product has variant
+  if (variantId) {
+    variant = await ProductVariant.findOne({
+      _id: variantId,
+      product: productId,
+      isActive: true,
+    });
+
+    if (!variant) {
+      throw new Error("Product variant not found.");
+    }
   }
 
+  // Determine available stock
+  const availableStock = variant
+    ? variant.stock
+    : product.stock;
+
   // Check stock
-  if (quantity > variant.stock) {
+  if (quantity > availableStock) {
     throw new Error(
-      `Only ${variant.stock} item(s) available for ${variant.name}.`,
+      `Only ${availableStock} item(s) available.`,
     );
   }
 
@@ -218,6 +305,7 @@ export const updateCartItemService = async ({
 
   await cart.save();
 
+  // Return updated cart
   return await Cart.findById(cart._id)
     .populate({
       path: "items.product",
@@ -233,51 +321,69 @@ export const updateCartItemService = async ({
     .populate("items.variant");
 };
 
+
 export const removeCartItemService = async ({
   customerId,
+  guestId,
   productId,
   variantId,
 }) => {
-  // Validate IDs
+  const cartOwnerQuery = getCartOwnerQuery({
+    customerId,
+    guestId,
+  });
+
+  // Validate product ID
   if (!mongoose.Types.ObjectId.isValid(productId)) {
     throw new Error("Invalid product ID.");
   }
 
-  if (!mongoose.Types.ObjectId.isValid(variantId)) {
+  // If variantId exists, validate it
+  if (
+    variantId &&
+    !mongoose.Types.ObjectId.isValid(variantId)
+  ) {
     throw new Error("Invalid variant ID.");
   }
 
   // Find cart
-  const cart = await Cart.findOne({
-    customer: customerId,
-  });
+  const cart = await Cart.findOne(cartOwnerQuery);
 
   if (!cart) {
     throw new Error("Cart not found.");
   }
 
-  // Check if the product + variant exists
-  const itemExists = cart.items.some(
-    (item) =>
-      item.product.toString() === productId &&
-      item.variant.toString() === variantId,
-  );
+  // Find cart item
+  const itemExists = cart.items.some((item) => {
+    const sameProduct =
+      item.product.toString() === productId;
+
+    const sameVariant = variantId
+      ? item.variant?.toString() === variantId
+      : !item.variant;
+
+    return sameProduct && sameVariant;
+  });
 
   if (!itemExists) {
-    throw new Error("Product variant not found in cart.");
+    throw new Error("Product not found in cart.");
   }
 
-  // Remove only the selected variant
-  cart.items = cart.items.filter(
-    (item) =>
-      !(
-        item.product.toString() === productId &&
-        item.variant.toString() === variantId
-      ),
-  );
+  // Remove item
+  cart.items = cart.items.filter((item) => {
+    const sameProduct =
+      item.product.toString() === productId;
+
+    const sameVariant = variantId
+      ? item.variant?.toString() === variantId
+      : !item.variant;
+
+    return !(sameProduct && sameVariant);
+  });
 
   await cart.save();
 
+  // Return updated cart
   return await Cart.findById(cart._id)
     .populate({
       path: "items.product",
@@ -293,10 +399,13 @@ export const removeCartItemService = async ({
     .populate("items.variant");
 };
 
-export const clearCartService = async (customerId) => {
-  const cart = await Cart.findOne({
-    customer: customerId,
+export const clearCartService = async ({ customerId, guestId }) => {
+  const cartOwnerQuery = getCartOwnerQuery({
+    customerId,
+    guestId,
   });
+
+  const cart = await Cart.findOne(cartOwnerQuery);
 
   if (!cart) {
     throw new Error("Cart not found.");
