@@ -1,10 +1,9 @@
 import mongoose from "mongoose";
-
 import Cart from "../models/cart.model.js";
 import Order from "../models/order.model.js";
 import Product from "../models/product.model.js";
 import ProductVariant from "../models/product-variant.model.js";
-
+import { adjustStock } from "./inventory.service.js";
 import { createNotification } from "./notification.service.js";
 
 const generateOrderNumber = async () => {
@@ -24,6 +23,7 @@ export const createCustomerOrderService = async ({
     throw new Error("Invalid payment method.");
   }
 
+  //Validate delivery address
   if (!deliveryAddress) {
     throw new Error("Delivery address is required.");
   }
@@ -43,7 +43,7 @@ export const createCustomerOrderService = async ({
     throw new Error("Invalid delivery address.");
   }
 
-  // Get customer cart
+  //Get customer cart
   const cart = await Cart.findOne({
     customer: customerId,
   })
@@ -54,19 +54,24 @@ export const createCustomerOrderService = async ({
     throw new Error("Your cart is empty.");
   }
 
+  //Validate cart and prepare order items
   const orderItems = [];
   let subtotal = 0;
 
   for (const item of cart.items) {
+    // Validate product
     const product = await Product.findOne({
       _id: item.product._id,
       isActive: true,
     });
 
     if (!product) {
-      throw new Error(`Product not found.`);
+      throw new Error(
+        `Product "${item.product?.name || ""}" is no longer available.`,
+      );
     }
 
+    // Validate variant
     const variant = await ProductVariant.findOne({
       _id: item.variant._id,
       product: product._id,
@@ -77,10 +82,14 @@ export const createCustomerOrderService = async ({
       throw new Error(`Variant not found for ${product.name}.`);
     }
 
+    // Validate stock
     if (variant.stock < item.quantity) {
-      throw new Error(`Only ${variant.stock} ${variant.name} available.`);
+      throw new Error(
+        `Only ${variant.stock} ${variant.name} available for ${product.name}.`,
+      );
     }
 
+    // Always use current database price
     const itemSubtotal = variant.price * item.quantity;
 
     subtotal += itemSubtotal;
@@ -88,26 +97,22 @@ export const createCustomerOrderService = async ({
     orderItems.push({
       product: product._id,
       variant: variant._id,
-
       productName: product.name,
       variantName: variant.name,
-
       sku: variant.sku,
-
       quantity: item.quantity,
-
       price: variant.price,
-
       subtotal: itemSubtotal,
     });
   }
 
+  //Calculate order totals
   const discount = 0;
-
   const total = subtotal - discount;
 
   const orderNumber = await generateOrderNumber();
 
+  // Create order
   const order = await Order.create({
     orderNumber,
     customer: customerId,
@@ -118,9 +123,59 @@ export const createCustomerOrderService = async ({
     paymentMethod,
     paymentStatus: "PENDING",
     status: "PENDING",
+    inventoryProcessed: false,
     deliveryAddress,
   });
 
+  //Deduct stock
+  const processedItems = [];
+
+  try {
+    for (const item of orderItems) {
+      await adjustStock({
+        productId: item.product,
+        variantId: item.variant,
+        movementType: "OUT",
+        quantity: item.quantity,
+        reason: `Order ${order.orderNumber}`,
+        referenceType: "ORDER",
+        referenceId: order._id,
+        createdBy: customerId,
+      });
+
+      processedItems.push(item);
+    }
+
+    // All stock successfully deducted
+    order.inventoryProcessed = true;
+
+    await order.save();
+  } catch (error) {
+    // Roll back already processed stock
+    for (const item of processedItems) {
+      try {
+        await adjustStock({
+          productId: item.product,
+          variantId: item.variant,
+          movementType: "IN",
+          quantity: item.quantity,
+          reason: `Rollback for failed order ${order.orderNumber}`,
+          referenceType: "ORDER",
+          referenceId: order._id,
+          createdBy: customerId,
+        });
+      } catch (rollbackError) {
+        console.error("Stock rollback failed:", rollbackError);
+      }
+    }
+
+    // Delete the failed order
+    await Order.findByIdAndDelete(order._id);
+
+    throw error;
+  }
+
+  // Notify customer
   await createNotification({
     recipient: customerId,
     title: "Order placed successfully",
@@ -133,16 +188,9 @@ export const createCustomerOrderService = async ({
     },
   });
 
-  // Deduct stock immediately for non-online payments
-  if (paymentMethod !== "ONLINE") {
-    for (const item of orderItems) {
-      await ProductVariant.findByIdAndUpdate(item.variant, {
-        $inc: {
-          stock: -item.quantity,
-        },
-      });
-    }
 
+  //Payment notification
+   if (paymentMethod !== "ONLINE") {
     await createNotification({
       recipient: customerId,
       title: "Payment Pending",
@@ -156,10 +204,12 @@ export const createCustomerOrderService = async ({
     });
   }
 
+  // Clear cart
   cart.items = [];
 
   await cart.save();
 
+  //Return populated order
   return await Order.findById(order._id)
     .populate("customer", "fullName email phoneNumber")
     .populate({

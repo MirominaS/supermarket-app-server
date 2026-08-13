@@ -20,10 +20,11 @@ import customerCartRoutes from "./routes/customer-cart.routes.js";
 import customerOrderRoutes from "./routes/customer-order.routes.js";
 import paymentRoutes from "./routes/payment.routes.js";
 import customerAddressRoutes from "./routes/customer-address.routes.js";
-import notificationRoutes from './routes/notification.routes.js';
+import notificationRoutes from "./routes/notification.routes.js";
 import inventoryRoutes from "./routes/inventory.routes.js";
 import supplierRoutes from "./routes/supplier.routes.js";
-
+import customerWishlistRoutes from "./routes/customer-wishlist.routes.js";
+import purchaseRoutes from "./routes/purchase.routes.js";
 
 const app = express();
 app.use(cors());
@@ -43,6 +44,7 @@ app.use("/api/admin/dashboard", dashboardRoutes);
 app.use("/api/media", mediaRoutes);
 app.use("/api/admin/inventory", inventoryRoutes);
 app.use("/api/admin/suppliers", supplierRoutes);
+app.use("/api/admin/purchases", purchaseRoutes);
 
 app.use("/api/customer/auth", customerAuthRoutes);
 app.use("/api/customer/categories", customerCategoryRoutes);
@@ -51,8 +53,10 @@ app.use("/api/customer/offers", customerOfferRoutes);
 app.use("/api/customer/carts", customerCartRoutes);
 app.use("/api/customer/orders", customerOrderRoutes);
 app.use("/api/customer/addresses", customerAddressRoutes);
+app.use("/api/customer/wishlist", customerWishlistRoutes);
+
 app.use("/api/payments", paymentRoutes);
-app.use("/api/notifications", notificationRoutes)
+app.use("/api/notifications", notificationRoutes);
 app.get("/", (req, res) => {
   res.send("Server is running");
 });
