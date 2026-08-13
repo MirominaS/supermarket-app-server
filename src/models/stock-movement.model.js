@@ -12,7 +12,7 @@ const stockMovementSchema = new mongoose.Schema(
     variant: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ProductVariant",
-      required: true,
+      required: null,
       index: true,
     },
 
