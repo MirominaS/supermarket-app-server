@@ -1,6 +1,7 @@
 import Sale from "../models/sale.model.js";
 import mongoose from "mongoose";
 import { buildDateFilter } from "../utils/date-filter.js";
+import { createExcelBuffer } from "../utils/excel.util.js";
 
 const generateSaleNumber = async () => {
   const count = await Sale.countDocuments();
@@ -479,5 +480,92 @@ export const getCategorySalesService = async ({
       hasNext: page * limit < total,
       hasPrev: page > 1,
     },
+  };
+};
+
+export const exportSalesService = async ({
+  period,
+  startDate,
+  endDate,
+  customer,
+  paymentMethod,
+}) => {
+  const filter = {};
+
+  // Customer filter
+  if (customer) {
+    if (!mongoose.Types.ObjectId.isValid(customer)) {
+      throw new Error("Invalid customer ID.");
+    }
+
+    filter.customer = customer;
+  }
+
+  // Payment method filter
+  if (paymentMethod) {
+    filter.paymentMethod = paymentMethod;
+  }
+
+  // Date filter
+  const dateFilter = buildDateFilter({
+    period,
+    startDate,
+    endDate,
+  });
+
+  if (Object.keys(dateFilter).length > 0) {
+    Object.assign(filter, dateFilter);
+  }
+
+  const sales = await Sale.find(filter)
+    .populate("customer", "fullName email phoneNumber")
+    .populate("order", "orderNumber")
+    .sort({ soldAt: -1 })
+    .lean();
+
+  const rows = [];
+
+  for (const sale of sales) {
+    for (const item of sale.items) {
+      rows.push({
+        saleNumber: sale.saleNumber,
+        saleDate: sale.soldAt,
+
+        orderNumber: sale.order?.orderNumber || "",
+
+        customerName: sale.customer?.fullName || "",
+        customerEmail: sale.customer?.email || "",
+        customerPhone: sale.customer?.phoneNumber || "",
+
+        paymentMethod: sale.paymentMethod,
+        paymentStatus: sale.paymentStatus,
+
+        productName: item.productName,
+        sku: item.sku,
+
+        quantity: item.quantity,
+        price: item.price,
+        itemSubtotal: item.subtotal,
+
+        saleSubtotal: sale.subtotal,
+        discount: sale.discount,
+        saleTotal: sale.total,
+      });
+    }
+  }
+
+  const buffer = createExcelBuffer({
+    workbookName: "sales-export",
+    sheets: [
+      {
+        name: "Sales",
+        data: rows,
+      },
+    ],
+  });
+
+  return {
+    buffer,
+    count: sales.length,
   };
 };

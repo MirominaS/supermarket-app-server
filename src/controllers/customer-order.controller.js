@@ -5,19 +5,39 @@ import {
   cancelCustomerOrderService,
 } from "../services/customer-order.service.js";
 
+//create customer order
 export const createCustomerOrder = async (req, res) => {
   try {
-    const { paymentMethod, deliveryAddress } = req.body;
+    const {
+      items,
+      paymentMethod,
+      deliveryAddress,
+    } = req.body;
 
-    if (!paymentMethod || !deliveryAddress) {
+    if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Payment method and delivery address are required.",
+        message: "Order items are required.",
+      });
+    }
+
+    if (!paymentMethod) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment method is required.",
+      });
+    }
+
+    if (!deliveryAddress) {
+      return res.status(400).json({
+        success: false,
+        message: "Delivery address is required.",
       });
     }
 
     const order = await createCustomerOrderService({
       customerId: req.user._id,
+      items,
       paymentMethod,
       deliveryAddress,
     });
@@ -28,7 +48,10 @@ export const createCustomerOrder = async (req, res) => {
       order,
     });
   } catch (error) {
-    console.error("Create customer order error:", error);
+    console.error(
+      "Create customer order error:",
+      error,
+    );
 
     return res.status(400).json({
       success: false,
@@ -37,6 +60,7 @@ export const createCustomerOrder = async (req, res) => {
   }
 };
 
+// get customer orders
 export const getCustomerOrders = async (req, res) => {
   try {
     const orders = await getCustomerOrdersService({
@@ -50,7 +74,10 @@ export const getCustomerOrders = async (req, res) => {
       orders,
     });
   } catch (error) {
-    console.error("Get customer orders error:", error);
+    console.error(
+      "Get customer orders error:",
+      error,
+    );
 
     return res.status(400).json({
       success: false,
@@ -59,6 +86,7 @@ export const getCustomerOrders = async (req, res) => {
   }
 };
 
+// get customer order by id
 export const getCustomerOrderById = async (req, res) => {
   try {
     const order = await getCustomerOrderByIdService(
@@ -71,7 +99,10 @@ export const getCustomerOrderById = async (req, res) => {
       order,
     });
   } catch (error) {
-    console.error("Get customer order error:", error);
+    console.error(
+      "Get customer order error:",
+      error,
+    );
 
     return res.status(404).json({
       success: false,
@@ -80,9 +111,13 @@ export const getCustomerOrderById = async (req, res) => {
   }
 };
 
+// cancel customer order
 export const cancelCustomerOrder = async (req, res) => {
   try {
-    const order = await cancelCustomerOrderService(req.user._id, req.params.id);
+    const order = await cancelCustomerOrderService(
+      req.user._id,
+      req.params.id,
+    );
 
     return res.status(200).json({
       success: true,
@@ -90,7 +125,10 @@ export const cancelCustomerOrder = async (req, res) => {
       order,
     });
   } catch (error) {
-    console.error("Cancel customer order error:", error);
+    console.error(
+      "Cancel customer order error:",
+      error,
+    );
 
     return res.status(400).json({
       success: false,

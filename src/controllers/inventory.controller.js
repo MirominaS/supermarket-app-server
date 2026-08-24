@@ -2,8 +2,12 @@ import {
   adjustStock,
   getLowStockProducts,
   getInventoryHistory,
-   getInventorySummaryService,
+  getInventorySummaryService,
 } from "../services/inventory.service.js";
+
+// =====================================================
+// UPDATE STOCK
+// =====================================================
 
 export const updateStock = async (req, res) => {
   try {
@@ -12,17 +16,34 @@ export const updateStock = async (req, res) => {
       variantId,
       movementType,
       quantity,
+      newStock,
       reason,
       referenceType,
       referenceId,
       notes,
     } = req.body;
 
-    const variant = await adjustStock({
+    // Product ID is always required
+    if (!productId || !movementType || !reason) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Product ID, movement type and reason are required.",
+      });
+    }
+
+    const stockItem = await adjustStock({
       productId,
-      variantId,
+      variantId: variantId || null,
       movementType,
-      quantity,
+      quantity:
+        quantity !== undefined
+          ? Number(quantity)
+          : undefined,
+      newStock:
+        newStock !== undefined
+          ? Number(newStock)
+          : undefined,
       reason,
       referenceType,
       referenceId,
@@ -30,75 +51,102 @@ export const updateStock = async (req, res) => {
       notes,
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Stock updated successfully.",
-      variant,
+      stockItem,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Update stock error:", error);
 
-    res.status(400).json({
+    return res.status(400).json({
       success: false,
       message: error.message,
     });
   }
 };
+
+// =====================================================
+// GET LOW STOCK
+// =====================================================
 
 export const getLowStock = async (req, res) => {
   try {
-    const products = await getLowStockProducts();
+    const threshold =
+      req.query.threshold !== undefined
+        ? Number(req.query.threshold)
+        : 10;
 
-    res.status(200).json({
+    const result = await getLowStockProducts({
+      threshold,
+    });
+
+    return res.status(200).json({
       success: true,
-      products,
+      ...result,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Get low stock error:", error);
 
-    res.status(400).json({
+    return res.status(400).json({
       success: false,
       message: error.message,
     });
   }
 };
+
+// =====================================================
+// GET STOCK HISTORY
+// =====================================================
 
 export const getStockHistory = async (req, res) => {
   try {
-    const { page, limit, movementType } = req.query;
-
-    const history = await getInventoryHistory({
+    const {
       page,
       limit,
       movementType,
+      productId,
+      variantId,
+    } = req.query;
+
+    const result = await getInventoryHistory({
+      page,
+      limit,
+      movementType,
+      productId,
+      variantId,
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      ...history,
+      ...result,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Get stock history error:", error);
 
-    res.status(400).json({
+    return res.status(400).json({
       success: false,
       message: error.message,
     });
   }
 };
+
+// =====================================================
+// GET INVENTORY SUMMARY
+// =====================================================
 
 export const getInventorySummary = async (req, res) => {
   try {
     const summary = await getInventorySummaryService();
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       summary,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Get inventory summary error:", error);
 
-    res.status(400).json({
+    return res.status(400).json({
       success: false,
       message: error.message,
     });

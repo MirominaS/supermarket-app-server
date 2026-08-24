@@ -1,8 +1,5 @@
 import mongoose from "mongoose";
 import Order from "../models/order.model.js";
-import User from "../models/user.model.js";
-import Product from "../models/product.model.js";
-import ProductVariant from "../models/product-variant.model.js";
 
 export const getOrdersService = async ({ status } = {}) => {
   const filter = {};
@@ -153,4 +150,97 @@ export const cancelOrderService = async (orderId) => {
   await order.save();
 
   return order;
+};
+
+export const exportOrdersService = async ({ status } = {}) => {
+  const filter = {};
+
+  if (status) {
+    const allowedStatuses = [
+      "PENDING",
+      "CONFIRMED",
+      "PROCESSING",
+      "READY",
+      "COMPLETED",
+      "CANCELLED",
+    ];
+
+    if (!allowedStatuses.includes(status)) {
+      throw new Error("Invalid order status.");
+    }
+
+    filter.status = status;
+  }
+
+  const orders = await Order.find(filter)
+    .populate("customer", "fullName email phoneNumber")
+    .populate("items.product", "name")
+    .populate("items.variant", "name sku")
+    .sort({
+      createdAt: -1,
+    })
+    .lean();
+
+  // Convert orders into Excel rows
+  const rows = [];
+
+  for (const order of orders) {
+    for (const item of order.items) {
+      rows.push({
+        orderNumber: order.orderNumber,
+
+        orderDate: order.createdAt
+          ? new Date(order.createdAt).toISOString()
+          : "",
+
+        customerName: order.customer?.fullName || "",
+
+        customerEmail: order.customer?.email || "",
+
+        customerPhone: order.customer?.phoneNumber || "",
+
+        status: order.status,
+
+        paymentMethod: order.paymentMethod,
+
+        paymentStatus: order.paymentStatus,
+
+        productName: item.product?.name || item.productName || "",
+
+        variantName: item.variant?.name || item.variantName || "",
+
+        sku: item.variant?.sku || item.sku || "",
+
+        quantity: item.quantity,
+
+        price: item.price,
+
+        subtotal: item.subtotal,
+
+        orderSubtotal: order.subtotal,
+
+        discount: order.discount,
+
+        orderTotal: order.total,
+
+        deliveryAddress: order.deliveryAddress?.address || "",
+
+        contactName: order.deliveryAddress?.contactName || "",
+
+        contactPhone: order.deliveryAddress?.contactPhone || "",
+
+        deliveryInstructions: order.deliveryAddress?.instructions || "",
+
+        cancelledAt: order.cancelledAt
+          ? new Date(order.cancelledAt).toISOString()
+          : "",
+
+        completedAt: order.completedAt
+          ? new Date(order.completedAt).toISOString()
+          : "",
+      });
+    }
+  }
+
+  return rows;
 };

@@ -23,16 +23,16 @@ export const uploadMedia = async (req, res) => {
       });
     }
 
-     // Product images
-     if (folder === "product-images" && req.user.role !== "ADMIN") {
+    // Product images
+    if (folder === "product-images" && req.user.role !== "ADMIN") {
       return res.status(403).json({
         success: false,
         message: "Only admins can upload product images.",
       });
     }
 
-     // Customer profile image
-     if (folder === "customer-profile-images" && req.user.role !== "CUSTOMER") {
+    // Customer profile image
+    if (folder === "customer-profile-images" && req.user.role !== "CUSTOMER") {
       return res.status(403).json({
         success: false,
         message: "Only customers can upload profile images.",
@@ -91,79 +91,95 @@ export const getMediaAccessUrl = async (req, res) => {
       });
     }
 
-    // PRODUCT IMAGE
-    if (media.folder === "product-images") {
-      const url = await getSignedUrl(
-        s3,
-        new GetObjectCommand({
-          Bucket: process.env.R2_BUCKET,
-          Key: media.key,
-        }),
-        {
-          // Product image URL valid for 1 hour
-          expiresIn: 3600,
-        },
-      );
-
-      return res.status(200).json({
-        success: true,
-        url,
+    // Only product images are allowed through this endpoint
+    if (media.folder !== "product-images") {
+      return res.status(400).json({
+        success: false,
+        message: "This endpoint is only for product images.",
       });
     }
 
-    // CUSTOMER PROFILE IMAGE
-    if (media.folder === "customer-profile-images") {
-      // Authentication required
-      if (!req.user) {
-        return res.status(401).json({
-          success: false,
-          message: "Authentication required.",
-        });
-      }
+    const url = await getSignedUrl(
+      s3,
+      new GetObjectCommand({
+        Bucket: process.env.R2_BUCKET,
+        Key: media.key,
+      }),
+      {
+        // Product image URL valid for 1 hour
+        expiresIn: 3600,
+      },
+    );
 
-      // Is the logged-in user the owner?
-      const isOwner = media.uploadedBy.toString() === req.user._id.toString();
-
-      // Is the logged-in user an admin?
-      const isAdmin = req.user.role === "ADMIN";
-
-      // Only owner or admin can access
-      if (!isOwner && !isAdmin) {
-        return res.status(403).json({
-          success: false,
-          message: "Access denied.",
-        });
-      }
-
-      const url = await getSignedUrl(
-        s3,
-        new GetObjectCommand({
-          Bucket: process.env.R2_BUCKET,
-          Key: media.key,
-        }),
-        {
-          // Profile image URL valid for 5 minutes
-          expiresIn: 300,
-        },
-      );
-
-      return res.status(200).json({
-        success: true,
-        url,
-      });
-    }
-
-    // UNKNOWN MEDIA FOLDER
-  return res.status(400).json({
-      success: false,
-      message: "Unsupported media type.",
+    return res.status(200).json({
+      success: true,
+      url,
     });
   } catch (error) {
-    console.error("Get media URL error:", error);
+    console.error("Get product media URL error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Failed to generate media URL.",
+    });
+  }
+};
+
+export const getProfileMediaAccessUrl = async (req, res) => {
+  try {
+    const media = await Media.findById(req.params.id);
+
+    if (!media) {
+      return res.status(404).json({
+        success: false,
+        message: "Media not found.",
+      });
+    }
+
+    // Make sure this is a customer profile image
+    if (media.folder !== "customer-profile-images") {
+      return res.status(400).json({
+        success: false,
+        message: "This endpoint is only for customer profile images.",
+      });
+    }
+
+    // Check owner
+    const isOwner = media.uploadedBy.toString() === req.user._id.toString();
+
+    // Check admin
+    const isAdmin = req.user.role === "ADMIN";
+
+    // Only owner or admin can access
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied.",
+      });
+    }
+
+    const url = await getSignedUrl(
+      s3,
+      new GetObjectCommand({
+        Bucket: process.env.R2_BUCKET,
+        Key: media.key,
+      }),
+      {
+        // Profile image URL valid for 5 minutes
+        expiresIn: 300,
+      },
+    );
+
+    return res.status(200).json({
+      success: true,
+      url,
+    });
+  } catch (error) {
+    console.error("Get profile media URL error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to generate profile image URL.",
     });
   }
 };

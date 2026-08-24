@@ -11,7 +11,7 @@ const orderItemSchema = new mongoose.Schema(
     variant: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ProductVariant",
-      required: true,
+      default: null,
     },
 
     productName: {
@@ -22,13 +22,13 @@ const orderItemSchema = new mongoose.Schema(
 
     variantName: {
       type: String,
-      required: true,
+      default: null,
       trim: true,
     },
 
     sku: {
       type: String,
-      required: true,
+      default: null,
       trim: true,
     },
 
@@ -52,7 +52,7 @@ const orderItemSchema = new mongoose.Schema(
   },
   {
     _id: false,
-  }
+  },
 );
 
 const orderSchema = new mongoose.Schema(
@@ -114,6 +114,11 @@ const orderSchema = new mongoose.Schema(
       default: false,
     },
 
+    stockReserved: {
+      type: Boolean,
+      default: false,
+    },
+
     status: {
       type: String,
       enum: [
@@ -165,8 +170,7 @@ const orderSchema = new mongoose.Schema(
           required: true,
           validate: {
             validator: (value) => value.length === 2,
-            message:
-              "Coordinates must contain [longitude, latitude].",
+            message: "Coordinates must contain [longitude, latitude].",
           },
         },
       },
@@ -178,7 +182,7 @@ const orderSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 orderSchema.index({

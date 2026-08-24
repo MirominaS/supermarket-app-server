@@ -2,6 +2,12 @@ import mongoose from "mongoose";
 
 import Product from "../models/product.model.js";
 import ProductVariant from "../models/product-variant.model.js";
+import {
+  getCache,
+  setCache,
+} from "./cache.service.js";
+
+import { productCacheKeys } from "../utils/product-cache-key.js";
 
 const validateProduct = async (productId) => {
   if (!mongoose.Types.ObjectId.isValid(productId)) {
@@ -77,16 +83,41 @@ export const createVariantService = async (productId, variantData) => {
 export const getVariantsService = async (productId) => {
   await validateProduct(productId);
 
-  return await ProductVariant.find({
+  const cacheKey = productCacheKeys.variants(productId);
+
+  const cachedVariants = await getCache(cacheKey);
+
+  if (cachedVariants !== null) {
+    console.log(`Variants cache HIT: ${cacheKey}`);
+
+    return cachedVariants;
+  }
+
+  console.log(`Variants cache MISS: ${cacheKey}`);
+
+  const variants = await ProductVariant.find({
     product: productId,
   }).sort({
     createdAt: 1,
   });
+
+  await setCache(cacheKey, variants, 300);
+
+  return variants;
 };
 
 // get variant by id
 export const getVariantByIdService = async (productId, variantId) => {
-  
+  const cachedVariant = await getCache(cacheKey);
+
+  if (cachedVariant !== null) {
+    console.log(`Variant cache HIT: ${cacheKey}`);
+
+    return cachedVariant;
+  }
+
+  console.log(`Variant cache MISS: ${cacheKey}`);
+
   await validateProduct(productId);
 
   if (!mongoose.Types.ObjectId.isValid(variantId)) {
@@ -101,6 +132,8 @@ export const getVariantByIdService = async (productId, variantId) => {
   if (!variant) {
     throw new Error("Variant not found.");
   }
+
+  await setCache(cacheKey, variant, 300);
 
   return variant;
 };

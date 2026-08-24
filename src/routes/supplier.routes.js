@@ -24,7 +24,7 @@ router.get("/", getSuppliers);
 
 router.get("/:id", getSupplierById);
 
-router.put("/:id", updateSupplier);
+router.patch("/:id", updateSupplier);
 
 router.delete("/:id", deleteSupplier);
 

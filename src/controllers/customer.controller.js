@@ -10,12 +10,7 @@ import {
 // Get all customers
 export const getCustomers = async (req, res) => {
   try {
-    const {
-      page,
-      limit,
-      search,
-      isActive,
-    } = req.query;
+    const { page, limit, search, isActive } = req.query;
 
     const result = await getCustomersService({
       page,
@@ -41,19 +36,14 @@ export const getCustomers = async (req, res) => {
 // Get customer by ID
 export const getCustomerById = async (req, res) => {
   try {
-    const customer = await getCustomerByIdService(
-      req.params.id
-    );
+    const customer = await getCustomerByIdService(req.params.id);
 
     return res.status(200).json({
       success: true,
       customer,
     });
   } catch (error) {
-    console.error(
-      "Get customer by ID error:",
-      error
-    );
+    console.error("Get customer by ID error:", error);
 
     return res.status(404).json({
       success: false,
@@ -65,10 +55,7 @@ export const getCustomerById = async (req, res) => {
 // Get customer's orders
 export const getCustomerOrders = async (req, res) => {
   try {
-    const {
-      page,
-      limit,
-    } = req.query;
+    const { page, limit } = req.query;
 
     const result = await getCustomerOrdersService({
       customerId: req.params.id,
@@ -81,10 +68,7 @@ export const getCustomerOrders = async (req, res) => {
       ...result,
     });
   } catch (error) {
-    console.error(
-      "Get customer orders error:",
-      error
-    );
+    console.error("Get customer orders error:", error);
 
     return res.status(400).json({
       success: false,
@@ -96,10 +80,7 @@ export const getCustomerOrders = async (req, res) => {
 // Get customer's sales
 export const getCustomerSales = async (req, res) => {
   try {
-    const {
-      page,
-      limit,
-    } = req.query;
+    const { page, limit } = req.query;
 
     const result = await getCustomerSalesService({
       customerId: req.params.id,
@@ -112,10 +93,7 @@ export const getCustomerSales = async (req, res) => {
       ...result,
     });
   } catch (error) {
-    console.error(
-      "Get customer sales error:",
-      error
-    );
+    console.error("Get customer sales error:", error);
 
     return res.status(400).json({
       success: false,
@@ -127,20 +105,14 @@ export const getCustomerSales = async (req, res) => {
 // Get customer summary
 export const getCustomerSummary = async (req, res) => {
   try {
-    const result =
-      await getCustomerSummaryService(
-        req.params.id
-      );
+    const result = await getCustomerSummaryService(req.params.id);
 
     return res.status(200).json({
       success: true,
       ...result,
     });
   } catch (error) {
-    console.error(
-      "Get customer summary error:",
-      error
-    );
+    console.error("Get customer summary error:", error);
 
     return res.status(400).json({
       success: false,
@@ -150,10 +122,7 @@ export const getCustomerSummary = async (req, res) => {
 };
 
 // Activate / deactivate customer
-export const updateCustomerStatus = async (
-  req,
-  res
-) => {
+export const updateCustomerStatus = async (req, res) => {
   try {
     const { isActive } = req.body;
 
@@ -164,11 +133,7 @@ export const updateCustomerStatus = async (
       });
     }
 
-    const customer =
-      await updateCustomerStatusService(
-        req.params.id,
-        isActive
-      );
+    const customer = await updateCustomerStatusService(req.params.id, isActive);
 
     return res.status(200).json({
       success: true,
@@ -178,10 +143,7 @@ export const updateCustomerStatus = async (
       customer,
     });
   } catch (error) {
-    console.error(
-      "Update customer status error:",
-      error
-    );
+    console.error("Update customer status error:", error);
 
     return res.status(400).json({
       success: false,

@@ -2,6 +2,12 @@ import Product from "../models/product.model.js";
 import Category from "../models/category.model.js";
 import Media from "../models/media.model.js";
 import ProductVariant from "../models/product-variant.model.js";
+import {
+  getCache,
+  setCache,
+} from "./cache.service.js";
+
+import { productCacheKeys } from "../utils/product-cache-key.js";
 
 export const createProductService = async (productData) => {
   const category = await Category.findById(productData.category);
@@ -79,6 +85,18 @@ export const createProductService = async (productData) => {
 };
 
 export const getProductsService = async () => {
+  const cacheKey = productCacheKeys.all;
+
+  const cachedProducts = await getCache(cacheKey);
+
+  if (cachedProducts !== null) {
+    console.log(`Products cache HIT: ${cacheKey}`);
+
+    return cachedProducts;
+  }
+
+  console.log(`Products cache MISS: ${cacheKey}`);
+
   const products = await Product.find()
     .populate("category")
     .populate("image")
@@ -106,10 +124,24 @@ export const getProductsService = async () => {
     });
   }
 
+  await setCache(cacheKey, result, 300);
+
   return result;
 };
 
 export const getProductByIdService = async (productId) => {
+  const cacheKey = productCacheKeys.byId(productId);
+
+  const cachedProduct = await getCache(cacheKey);
+
+  if (cachedProduct !== null) {
+    console.log(`Product cache HIT: ${cacheKey}`);
+
+    return cachedProduct;
+  }
+
+  console.log(`Product cache MISS: ${cacheKey}`);
+
   const product = await Product.findById(productId)
     .populate("category")
     .populate("image");
@@ -129,10 +161,14 @@ export const getProductByIdService = async (productId) => {
     });
   }
 
-  return {
+  const result = {
     ...product.toObject(),
     variants,
   };
+
+  await setCache(cacheKey, result, 300);
+
+  return result;
 };
 
 export const updateProductService = async (productId, updateData) => {
@@ -220,7 +256,6 @@ export const updateProductService = async (productId, updateData) => {
 
   // PRODUCTS WITH VARIANT
   if (product.hasVariants) {
-
     if (
       updateData.price !== undefined ||
       updateData.costPrice !== undefined ||

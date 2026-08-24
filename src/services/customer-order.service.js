@@ -1,27 +1,41 @@
 import mongoose from "mongoose";
 
-import Cart from "../models/cart.model.js";
 import Order from "../models/order.model.js";
 import Product from "../models/product.model.js";
 import ProductVariant from "../models/product-variant.model.js";
-
+import { adjustStock } from "./inventory.service.js";
 import { createNotification } from "./notification.service.js";
 
+// Generate Order Number
 const generateOrderNumber = async () => {
   const count = await Order.countDocuments();
 
   return `ORD-${String(count + 1).padStart(5, "0")}`;
 };
 
+// Create Customer Order
 export const createCustomerOrderService = async ({
   customerId,
+  items,
   paymentMethod,
   deliveryAddress,
 }) => {
+  if (!customerId) {
+    throw new Error("Customer ID is required.");
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(customerId)) {
+    throw new Error("Invalid customer ID.");
+  }
+
   const allowedPaymentMethods = ["CASH", "CARD", "ONLINE"];
 
   if (!allowedPaymentMethods.includes(paymentMethod)) {
     throw new Error("Invalid payment method.");
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error("Order must contain at least one item.");
   }
 
   if (!deliveryAddress) {
@@ -43,65 +57,132 @@ export const createCustomerOrderService = async ({
     throw new Error("Invalid delivery address.");
   }
 
-  // Get customer cart
-  const cart = await Cart.findOne({
-    customer: customerId,
-  })
-    .populate("items.product")
-    .populate("items.variant");
+  // Validate coordinates
+  const [longitude, latitude] = location.coordinates;
 
-  if (!cart || cart.items.length === 0) {
-    throw new Error("Your cart is empty.");
+  if (
+    typeof longitude !== "number" ||
+    typeof latitude !== "number" ||
+    longitude < -180 ||
+    longitude > 180 ||
+    latitude < -90 ||
+    latitude > 90
+  ) {
+    throw new Error("Invalid location coordinates.");
   }
 
   const orderItems = [];
   let subtotal = 0;
 
-  for (const item of cart.items) {
+  for (const item of items) {
+    const { productId, variantId, quantity } = item;
+
+    if (!productId) {
+      throw new Error("Product ID is required.");
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      throw new Error("Invalid product ID.");
+    }
+
+    const parsedQuantity = Number(quantity);
+
+    if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1) {
+      throw new Error(`Invalid quantity for product ${productId}.`);
+    }
+
     const product = await Product.findOne({
-      _id: item.product._id,
+      _id: productId,
       isActive: true,
     });
 
     if (!product) {
-      throw new Error(`Product not found.`);
+      throw new Error(
+        "One of the products in your cart is no longer available.",
+      );
     }
 
-    const variant = await ProductVariant.findOne({
-      _id: item.variant._id,
-      product: product._id,
-      isActive: true,
-    });
+    // product with variants
+    if (product.hasVariants) {
+      if (!variantId) {
+        throw new Error(`Please select a variant for ${product.name}.`);
+      }
 
-    if (!variant) {
-      throw new Error(`Variant not found for ${product.name}.`);
+      if (!mongoose.Types.ObjectId.isValid(variantId)) {
+        throw new Error(`Invalid variant for ${product.name}.`);
+      }
+
+      const variant = await ProductVariant.findOne({
+        _id: variantId,
+        product: product._id,
+        isActive: true,
+      });
+
+      if (!variant) {
+        throw new Error(
+          `Variant for "${product.name}" is no longer available.`,
+        );
+      }
+
+      if (variant.stock < parsedQuantity) {
+        throw new Error(
+          `Only ${variant.stock} ${variant.name} available for ${product.name}.`,
+        );
+      }
+
+      const price = variant.price;
+
+      const itemSubtotal = price * parsedQuantity;
+
+      subtotal += itemSubtotal;
+
+      orderItems.push({
+        product: product._id,
+        variant: variant._id,
+        productName: product.name,
+        variantName: variant.name,
+        sku: variant.sku,
+        quantity: parsedQuantity,
+        price,
+        subtotal: itemSubtotal,
+      });
     }
 
-    if (variant.stock < item.quantity) {
-      throw new Error(`Only ${variant.stock} ${variant.name} available.`);
+    // product without variants
+    else {
+      if (variantId) {
+        throw new Error(`${product.name} does not have variants.`);
+      }
+
+      if (
+        product.stock === null ||
+        product.stock === undefined ||
+        product.stock < parsedQuantity
+      ) {
+        throw new Error(
+          `Only ${product.stock ?? 0} ${product.unit || "items"} available for ${product.name}.`,
+        );
+      }
+
+      const price = product.price;
+
+      const itemSubtotal = price * parsedQuantity;
+
+      subtotal += itemSubtotal;
+
+      orderItems.push({
+        product: product._id,
+        variant: null,
+        productName: product.name,
+        variantName: null,
+        sku: null,
+
+        quantity: parsedQuantity,
+        price,
+        subtotal: itemSubtotal,
+      });
     }
-
-    const itemSubtotal = variant.price * item.quantity;
-
-    subtotal += itemSubtotal;
-
-    orderItems.push({
-      product: product._id,
-      variant: variant._id,
-
-      productName: product.name,
-      variantName: variant.name,
-
-      sku: variant.sku,
-
-      quantity: item.quantity,
-
-      price: variant.price,
-
-      subtotal: itemSubtotal,
-    });
   }
-
   const discount = 0;
 
   const total = subtotal - discount;
@@ -118,9 +199,65 @@ export const createCustomerOrderService = async ({
     paymentMethod,
     paymentStatus: "PENDING",
     status: "PENDING",
-    deliveryAddress,
+    inventoryProcessed: false,
+    stockReserved: false,
+    deliveryAddress: {
+      address,
+      contactName,
+      contactPhone,
+      instructions: instructions || "",
+      location: {
+        type: "Point",
+        coordinates: [longitude, latitude],
+      },
+    },
   });
 
+  const processedItems = [];
+
+  try {
+    for (const item of orderItems) {
+      await adjustStock({
+        productId: item.product,
+        variantId: item.variant,
+        movementType: "OUT",
+        quantity: item.quantity,
+        reason: `Order ${order.orderNumber}`,
+        referenceType: "ORDER",
+        referenceId: order._id,
+        createdBy: customerId,
+      });
+
+      processedItems.push(item);
+    }
+    order.inventoryProcessed = true;
+
+    await order.save();
+  } catch (error) {
+    console.error("Order stock deduction failed:", error);
+
+    // Roll back already processed stock
+    for (const item of processedItems) {
+      try {
+        await adjustStock({
+          productId: item.product,
+          variantId: item.variant,
+          movementType: "IN",
+          quantity: item.quantity,
+          reason: `Rollback for failed order ${order.orderNumber}`,
+          referenceType: "ORDER",
+          referenceId: order._id,
+          createdBy: customerId,
+        });
+      } catch (rollbackError) {
+        console.error("Stock rollback failed:", rollbackError);
+      }
+    }
+
+    await Order.findByIdAndDelete(order._id);
+    throw error;
+  }
+  //order notification
   await createNotification({
     recipient: customerId,
     title: "Order placed successfully",
@@ -133,16 +270,7 @@ export const createCustomerOrderService = async ({
     },
   });
 
-  // Deduct stock immediately for non-online payments
   if (paymentMethod !== "ONLINE") {
-    for (const item of orderItems) {
-      await ProductVariant.findByIdAndUpdate(item.variant, {
-        $inc: {
-          stock: -item.quantity,
-        },
-      });
-    }
-
     await createNotification({
       recipient: customerId,
       title: "Payment Pending",
@@ -156,10 +284,6 @@ export const createCustomerOrderService = async ({
     });
   }
 
-  cart.items = [];
-
-  await cart.save();
-
   return await Order.findById(order._id)
     .populate("customer", "fullName email phoneNumber")
     .populate({
@@ -171,6 +295,7 @@ export const createCustomerOrderService = async ({
     .populate("items.variant");
 };
 
+// Get Customer Orders
 export const getCustomerOrdersService = async ({ customerId, status }) => {
   const filter = {
     customer: customerId,
@@ -206,6 +331,7 @@ export const getCustomerOrdersService = async ({ customerId, status }) => {
     });
 };
 
+// Get Customer Order By ID
 export const getCustomerOrderByIdService = async (customerId, orderId) => {
   if (!mongoose.Types.ObjectId.isValid(orderId)) {
     throw new Error("Invalid order ID.");
@@ -230,6 +356,7 @@ export const getCustomerOrderByIdService = async (customerId, orderId) => {
   return order;
 };
 
+// Cancel Customer Order
 export const cancelCustomerOrderService = async (customerId, orderId) => {
   if (!mongoose.Types.ObjectId.isValid(orderId)) {
     throw new Error("Invalid order ID.");
@@ -257,12 +384,20 @@ export const cancelCustomerOrderService = async (customerId, orderId) => {
   }
 
   // Restore stock
-  for (const item of order.items) {
-    await ProductVariant.findByIdAndUpdate(item.variant, {
-      $inc: {
-        stock: item.quantity,
-      },
-    });
+  if (order.inventoryProcessed) {
+    for (const item of order.items) {
+      await adjustStock({
+        productId: item.product,
+        variantId: item.variant,
+        movementType: "IN",
+        quantity: item.quantity,
+        reason: `Order ${order.orderNumber} cancelled`,
+        referenceType: "ORDER",
+        referenceId: order._id,
+        createdBy: customerId,
+      });
+    }
+    order.inventoryProcessed = false;
   }
 
   order.status = "CANCELLED";
@@ -278,9 +413,11 @@ export const cancelCustomerOrderService = async (customerId, orderId) => {
     data: {
       orderId: order._id,
       orderNumber: order.orderNumber,
+      status: order.status,
     },
   });
 
+  // Return cancelled order
   return await Order.findById(order._id)
     .populate({
       path: "items.product",
