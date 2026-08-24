@@ -11,7 +11,7 @@ const orderItemSchema = new mongoose.Schema(
     variant: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ProductVariant",
-      required: null,
+      default: null,
     },
 
     productName: {
@@ -22,13 +22,13 @@ const orderItemSchema = new mongoose.Schema(
 
     variantName: {
       type: String,
-      required: true,
+      default: null,
       trim: true,
     },
 
     sku: {
       type: String,
-      required: true,
+      default: null,
       trim: true,
     },
 
