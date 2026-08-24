@@ -4,6 +4,7 @@ import {
   getCategoryByIdService,
   updateCategoryService,
   deleteCategoryService,
+  bulkImportCategoriesService,
 } from "../services/category.service.js";
 
 export const createCategory = async (req, res) => {
@@ -59,9 +60,7 @@ export const getCategories = async (req, res) => {
 
 export const getCategoryById = async (req, res) => {
   try {
-    const category = await getCategoryByIdService(
-      req.params.id
-    );
+    const category = await getCategoryByIdService(req.params.id);
 
     return res.status(200).json({
       success: true,
@@ -79,10 +78,7 @@ export const getCategoryById = async (req, res) => {
 
 export const updateCategory = async (req, res) => {
   try {
-    const category = await updateCategoryService(
-      req.params.id,
-      req.body
-    );
+    const category = await updateCategoryService(req.params.id, req.body);
 
     return res.status(200).json({
       success: true,
@@ -113,6 +109,43 @@ export const deleteCategory = async (req, res) => {
     return res.status(404).json({
       success: false,
       message: error.message,
+    });
+  }
+};
+
+// Bulk Import
+export const bulkImportCategories = async (req, res) => {
+  try {
+    const sheets = req.excelData;
+
+    if (!sheets) {
+      return res.status(400).json({
+        success: false,
+        message: "Excel data is missing.",
+      });
+    }
+
+    const result = await bulkImportCategoriesService(sheets);
+
+    if (result.errors && result.errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Category import failed. Please fix the errors and try again.",
+        ...result,
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: "Categories imported successfully.",
+      ...result,
+    });
+  } catch (error) {
+    console.error("Bulk import categories error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to import categories.",
     });
   }
 };
