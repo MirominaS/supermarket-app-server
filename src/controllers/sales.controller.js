@@ -5,6 +5,7 @@ import {
   getRevenueService,
   getSoldProductsService,
   getCategorySalesService,
+  exportSalesService,
 } from "../services/sales.service.js";
 
 // Get all sales
@@ -179,6 +180,52 @@ export const getCategorySales = async (req, res) => {
     });
   } catch (error) {
     console.error("Get category sales error:", error);
+
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// Export sales
+export const exportSales = async (req, res) => {
+  try {
+    const {
+      period,
+      startDate,
+      endDate,
+      customer,
+      paymentMethod,
+    } = req.query;
+
+    const { buffer, count } = await exportSalesService({
+      period,
+      startDate,
+      endDate,
+      customer,
+      paymentMethod,
+    });
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="sales-export-${Date.now()}.xlsx"`
+    );
+
+    res.setHeader(
+      "Content-Length",
+      buffer.length
+    );
+
+    return res.status(200).send(buffer);
+
+  } catch (error) {
+    console.error("Export sales error:", error);
 
     return res.status(400).json({
       success: false,

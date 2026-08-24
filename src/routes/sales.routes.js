@@ -7,6 +7,7 @@ import {
   getRevenue,
   getSoldProducts,
   getCategorySales,
+  exportSales,
 } from "../controllers/sales.controller.js";
 
 import { authenticate } from "../middleware/auth.middleware.js";
@@ -32,6 +33,8 @@ router.get("/products", getSoldProducts);
 
 // Category sales report
 router.get("/categories", getCategorySales);
+
+router.get("/export", exportSales);
 
 // Get single sale
 router.get("/:id", getSaleById);
