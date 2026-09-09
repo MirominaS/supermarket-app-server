@@ -1,7 +1,17 @@
 import Stripe from "stripe";
-import dotenv from "dotenv";
-dotenv.config()
+import {
+  getDecryptedSecretKeyService,
+} from "../services/payment-settings.service.js";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+export const getStripeClient = async () => {
+  const settings =
+    await getDecryptedSecretKeyService();
 
-export default stripe;
+  if (!settings?.secretKey) {
+    throw new Error(
+      "Stripe secret key is not configured.",
+    );
+  }
+
+  return new Stripe(settings.secretKey);
+};
