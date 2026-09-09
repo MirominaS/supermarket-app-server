@@ -39,6 +39,17 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
+    gender: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
+    dateOfBirth: {
+      type: Date,
+      default: null,
+    },
+
     authProvider: {
       type: String,
       enum: ["LOCAL", "GOOGLE"],
