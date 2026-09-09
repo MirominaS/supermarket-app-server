@@ -8,7 +8,9 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "seed:admin": "node src/seeders/admin.seeder.js",
-    "seed": "node src/seeders/seedAll.js"
+    "seed": "node src/seeders/seedAll.js",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "repository": {
     "type": "git",
@@ -39,12 +41,16 @@
     "libphonenumber-js": "^1.13.10",
     "mongoose": "^9.8.1",
     "multer": "^2.2.0",
+    "pdfkit": "^0.20.2",
     "resend": "^6.18.1",
     "stripe": "^22.2.0",
     "winston": "^3.19.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^17.11.0",
     "nodemon": "^3.1.14"
   }
 }
