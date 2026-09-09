@@ -2,6 +2,7 @@ import Sale from "../models/sale.model.js";
 import mongoose from "mongoose";
 import { buildDateFilter } from "../utils/date-filter.js";
 import { createExcelBuffer } from "../utils/excel.util.js";
+import { createInvoiceFromSale } from "./invoice.service.js";
 
 const generateSaleNumber = async () => {
   const count = await Sale.countDocuments();
@@ -9,31 +10,54 @@ const generateSaleNumber = async () => {
   return `SAL-${String(count + 1).padStart(5, "0")}`;
 };
 
-export const createSaleFromOrder = async (order) => {
-  const existingSale = await Sale.findOne({
-    order: order._id,
-  });
-
-  if (existingSale) {
-    return existingSale;
+export const createSaleFromOrder = async (order, session = null) => {
+  if (!order) {
+    throw new Error("Order is required.");
   }
 
-  const saleNumber = await generateSaleNumber();
-
-  const sale = await Sale.create({
-    saleNumber,
+  let saleQuery = Sale.findOne({
     order: order._id,
-    customer: order.customer,
-    items: order.items,
-    subtotal: order.subtotal,
-    discount: order.discount,
-    total: order.total,
-    paymentMethod: order.paymentMethod,
-    paymentStatus: "PAID",
-    soldAt: new Date(),
   });
 
-  return sale;
+  if (session) {
+    saleQuery = saleQuery.session(session);
+  }
+
+  let sale = await saleQuery;
+
+  if (!sale) {
+    const saleNumber = await generateSaleNumber();
+
+    const saleData = {
+      saleNumber,
+      order: order._id,
+      customer: order.customer,
+      items: order.items,
+      subtotal: order.subtotal,
+      discount: order.discount,
+      total: order.total,
+      paymentMethod: order.paymentMethod,
+      paymentStatus: "PAID",
+      soldAt: new Date(),
+    };
+
+    if (session) {
+      const [createdSale] = await Sale.create([saleData], {
+        session,
+      });
+
+      sale = createdSale;
+    } else {
+      sale = await Sale.create(saleData);
+    }
+  }
+
+  const invoice = await createInvoiceFromSale(sale._id, session);
+
+  return {
+    sale,
+    invoice,
+  };
 };
 
 export const getSalesService = async ({
