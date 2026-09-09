@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 import Order from "../models/order.model.js";
+import { completeOrderService } from "./order-completion.service.js";
+import { adjustStock } from "./inventory.service.js";
 
 export const getOrdersService = async ({ status } = {}) => {
   const filter = {};
