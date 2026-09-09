@@ -395,7 +395,7 @@ export const bulkImportProductsAndVariantsService = async (sheets) => {
             field,
             message:
               `${field} must be empty when hasVariants is true. ` +
-              `Manage this value through the Variants sheet.`,
+              "Manage this value through the Variants sheet.",
           });
 
           invalidVariantProductFields = true;
@@ -1033,8 +1033,6 @@ export const bulkImportProductsAndVariantsService = async (sheets) => {
 
       errors: [],
     };
-  } catch (error) {
-    throw error;
   } finally {
     await session.endSession();
   }

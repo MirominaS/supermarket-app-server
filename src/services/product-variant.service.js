@@ -1,12 +1,7 @@
 import mongoose from "mongoose";
-
 import Product from "../models/product.model.js";
 import ProductVariant from "../models/product-variant.model.js";
-import {
-  getCache,
-  setCache,
-} from "./cache.service.js";
-
+import { getCache, setCache } from "./cache.service.js";
 import { productCacheKeys } from "../utils/product-cache-key.js";
 
 const validateProduct = async (productId) => {
@@ -108,6 +103,8 @@ export const getVariantsService = async (productId) => {
 
 // get variant by id
 export const getVariantByIdService = async (productId, variantId) => {
+  const cacheKey = productCacheKeys.variant(productId, variantId);
+
   const cachedVariant = await getCache(cacheKey);
 
   if (cachedVariant !== null) {
