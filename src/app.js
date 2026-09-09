@@ -25,6 +25,8 @@ import inventoryRoutes from "./routes/inventory.routes.js";
 import supplierRoutes from "./routes/supplier.routes.js";
 import customerWishlistRoutes from "./routes/customer-wishlist.routes.js";
 import purchaseRoutes from "./routes/purchase.routes.js";
+import paymentSettingsRoutes from "./routes/payment-settings.routes.js";
+import invoiceRoutes from "./routes/invoice.routes.js";
 
 const app = express();
 app.use(cors());
@@ -45,6 +47,7 @@ app.use("/api/media", mediaRoutes);
 app.use("/api/admin/inventory", inventoryRoutes);
 app.use("/api/admin/suppliers", supplierRoutes);
 app.use("/api/admin/purchases", purchaseRoutes);
+app.use("/api/admin/payment-settings", paymentSettingsRoutes);
 
 app.use("/api/customer/auth", customerAuthRoutes);
 app.use("/api/customer/categories", customerCategoryRoutes);
@@ -57,6 +60,7 @@ app.use("/api/customer/wishlist", customerWishlistRoutes);
 
 app.use("/api/payments", paymentRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/invoices", invoiceRoutes);
 app.get("/", (req, res) => {
   res.send("Server is running");
 });
