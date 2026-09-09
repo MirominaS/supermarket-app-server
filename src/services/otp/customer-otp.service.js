@@ -1,9 +1,15 @@
-import CustomerOtp from "../../models/customer-otp.model.js";
 import { generateOtp, hashOtp, verifyOtp } from "../../utils/otp.helper.js";
+import {
+  getCache,
+  setCache,
+  deleteCache,
+} from "../cache.service.js";
+import { otpCacheKeys } from "../../utils/otp-cache-key.js";
 
-const OTP_EXPIRY_MINUTES = 5;
+const OTP_EXPIRY_SECONDS = 5 * 60;
 const MAX_ATTEMPTS = 3;
 
+// CREATE OTP
 export const createOtp = async ({
   email,
   purpose,
@@ -14,14 +20,16 @@ export const createOtp = async ({
 
   const hashedOtp = await hashOtp(otp);
 
-  const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
-
-  await CustomerOtp.deleteMany({
+  const cacheKey = otpCacheKeys.byEmailAndPurpose(
     email,
     purpose,
-  });
+    verificationType,
+  );
 
-  const otpRecord = await CustomerOtp.create({
+  const expiresAt =
+    Date.now() + OTP_EXPIRY_SECONDS * 1000;
+
+  const otpData = {
     ...data,
 
     email,
@@ -30,74 +38,118 @@ export const createOtp = async ({
 
     otp: hashedOtp,
 
-    expiresAt,
-
     attempts: 0,
-  });
+
+    expiresAt,
+  };
+
+  // Remove previous OTP
+  await deleteCache(cacheKey);
+
+  // Store OTP in Redis
+  await setCache(
+    cacheKey,
+    otpData,
+    OTP_EXPIRY_SECONDS,
+  );
 
   return {
     otp,
-    otpRecord,
   };
 };
 
+// VALIDATE OTP
 export const validateOtp = async ({
   email,
   otp,
   purpose,
   verificationType,
 }) => {
-  const otpRecord = await CustomerOtp.findOne({
+  const cacheKey = otpCacheKeys.byEmailAndPurpose(
     email,
     purpose,
     verificationType,
-  });
+  );
 
-  if (!otpRecord) {
-    throw new Error("OTP not found or has expired.");
+  const otpData = await getCache(cacheKey);
+
+  if (!otpData) {
+    throw new Error(
+      "OTP not found or has expired.",
+    );
   }
 
-  if (new Date() > otpRecord.expiresAt) {
-    await CustomerOtp.deleteOne({
-      _id: otpRecord._id,
-    });
+  // Check expiry
+  if (Date.now() > otpData.expiresAt) {
+    await deleteCache(cacheKey);
 
-    throw new Error("OTP has expired. Please request a new OTP.");
+    throw new Error(
+      "OTP has expired. Please request a new OTP.",
+    );
   }
 
-  if (otpRecord.attempts >= MAX_ATTEMPTS) {
-    await CustomerOtp.deleteOne({
-      _id: otpRecord._id,
-    });
+  // Check maximum attempts
+  if (otpData.attempts >= MAX_ATTEMPTS) {
+    await deleteCache(cacheKey);
 
-    throw new Error("Too many incorrect attempts. Please request a new OTP.");
+    throw new Error(
+      "Too many incorrect attempts. Please request a new OTP.",
+    );
   }
 
-  const valid = await verifyOtp(otp, otpRecord.otp);
+  // Verify OTP
+  const valid = await verifyOtp(
+    otp,
+    otpData.otp,
+  );
 
   if (!valid) {
-    otpRecord.attempts++;
+    otpData.attempts += 1;
 
-    await otpRecord.save();
-
-    const remaining = MAX_ATTEMPTS - otpRecord.attempts;
+    const remaining =
+      MAX_ATTEMPTS - otpData.attempts;
 
     if (remaining <= 0) {
-      await CustomerOtp.deleteOne({
-        _id: otpRecord._id,
-      });
+      await deleteCache(cacheKey);
 
-      throw new Error("Too many incorrect attempts. Please request a new OTP.");
+      throw new Error(
+        "Too many incorrect attempts. Please request a new OTP.",
+      );
     }
 
-    throw new Error(`Invalid OTP. ${remaining} attempt(s) remaining.`);
+    // Preserve original expiration
+    const remainingSeconds = Math.max(
+      1,
+      Math.ceil(
+        (otpData.expiresAt - Date.now()) / 1000,
+      ),
+    );
+
+    await setCache(
+      cacheKey,
+      otpData,
+      remainingSeconds,
+    );
+
+    throw new Error(
+      `Invalid OTP. ${remaining} attempt(s) remaining.`,
+    );
   }
 
-  return otpRecord;
+  return otpData;
 };
 
-export const deleteOtp = async ({ id }) => {
-  await CustomerOtp.deleteOne({
-    _id: id,
-  });
+// DELETE OTP
+export const deleteOtp = async ({
+  email,
+  purpose,
+  verificationType,
+}) => {
+  const cacheKey = otpCacheKeys.byEmailAndPurpose(
+    email,
+    purpose,
+    verificationType,
+  );
+
+  await deleteCache(cacheKey);
 };
