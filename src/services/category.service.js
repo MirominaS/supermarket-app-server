@@ -390,8 +390,6 @@ export const bulkImportCategoriesService = async (sheets) => {
 
       errors: [],
     };
-  } catch (error) {
-    throw error;
   } finally {
     await session.endSession();
   }
