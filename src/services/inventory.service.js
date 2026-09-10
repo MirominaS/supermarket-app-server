@@ -4,10 +4,7 @@ import Product from "../models/product.model.js";
 import ProductVariant from "../models/product-variant.model.js";
 import StockMovement from "../models/stock-movement.model.js";
 
-// =====================================================
 // CREATE STOCK MOVEMENT
-// =====================================================
-
 export const createStockMovement = async ({
   product,
   variant = null,
@@ -22,7 +19,7 @@ export const createStockMovement = async ({
   notes = "",
   session = null,
 }) => {
-   const movement = new StockMovement({
+  const movement = new StockMovement({
     product,
     variant,
     movementType,
@@ -35,16 +32,12 @@ export const createStockMovement = async ({
     createdBy,
     notes,
   });
-    await movement.save({ session });
+  await movement.save({ session });
 
-    return movement;
+  return movement;
 };
 
-// =====================================================
 // ADJUST STOCK
-// Supports both variant and non-variant products
-// =====================================================
-
 export const adjustStock = async ({
   productId,
   variantId = null,
@@ -58,25 +51,13 @@ export const adjustStock = async ({
   notes = "",
   session = null,
 }) => {
-  // ---------------------------------------------------
-  // Validate Product ID
-  // ---------------------------------------------------
-
   if (!mongoose.Types.ObjectId.isValid(productId)) {
     throw new Error("Invalid product ID.");
   }
 
-  // ---------------------------------------------------
-  // Validate Variant ID if provided
-  // ---------------------------------------------------
-
   if (variantId !== null && !mongoose.Types.ObjectId.isValid(variantId)) {
     throw new Error("Invalid variant ID.");
   }
-
-  // ---------------------------------------------------
-  // Validate Movement Type
-  // ---------------------------------------------------
 
   const allowedMovementTypes = ["IN", "OUT", "ADJUSTMENT", "RETURN"];
 
@@ -84,17 +65,9 @@ export const adjustStock = async ({
     throw new Error("Invalid movement type.");
   }
 
-  // ---------------------------------------------------
-  // Validate Reason
-  // ---------------------------------------------------
-
   if (!reason || !reason.trim()) {
     throw new Error("Stock movement reason is required.");
   }
-
-  // ---------------------------------------------------
-  // Validate Quantity
-  // ---------------------------------------------------
 
   if (movementType !== "ADJUSTMENT") {
     if (!Number.isInteger(quantity) || quantity <= 0) {
@@ -102,20 +75,13 @@ export const adjustStock = async ({
     }
   }
 
-  // ---------------------------------------------------
-  // Find Product
-  // ---------------------------------------------------
-
   const product = await Product.findById(productId).session(session);
 
   if (!product) {
     throw new Error("Product not found.");
   }
 
-  // ===================================================
   // PRODUCT WITHOUT VARIANTS
-  // ===================================================
-
   if (!product.hasVariants) {
     // Variant must not be supplied
     if (variantId) {
@@ -131,10 +97,6 @@ export const adjustStock = async ({
 
     let currentStock = previousStock;
     let movementQuantity = quantity;
-
-    // -------------------------------------------------
-    // Calculate New Stock
-    // -------------------------------------------------
 
     switch (movementType) {
       case "IN":
@@ -174,25 +136,13 @@ export const adjustStock = async ({
         throw new Error("Invalid movement type.");
     }
 
-    // -------------------------------------------------
-    // Prevent useless adjustment
-    // -------------------------------------------------
-
     if (movementType === "ADJUSTMENT" && previousStock === currentStock) {
       return product;
     }
 
-    // -------------------------------------------------
-    // Update Product Stock
-    // -------------------------------------------------
-
     product.stock = currentStock;
 
     await product.save({ session });
-
-    // -------------------------------------------------
-    // Create Stock Movement
-    // -------------------------------------------------
 
     await createStockMovement({
       product: product._id,
@@ -212,17 +162,10 @@ export const adjustStock = async ({
     return product;
   }
 
-  // ===================================================
   // PRODUCT WITH VARIANTS
-  // ===================================================
-
   if (!variantId) {
     throw new Error("Variant ID is required for a product with variants.");
   }
-
-  // ---------------------------------------------------
-  // Find Variant
-  // ---------------------------------------------------
 
   const variant = await ProductVariant.findOne({
     _id: variantId,
@@ -233,18 +176,10 @@ export const adjustStock = async ({
     throw new Error("Product variant not found.");
   }
 
-  // ---------------------------------------------------
-  // Get Previous Stock
-  // ---------------------------------------------------
-
   const previousStock = variant.stock;
 
   let currentStock = previousStock;
   let movementQuantity = quantity;
-
-  // ---------------------------------------------------
-  // Calculate New Stock
-  // ---------------------------------------------------
 
   switch (movementType) {
     case "IN":
@@ -284,25 +219,13 @@ export const adjustStock = async ({
       throw new Error("Invalid movement type.");
   }
 
-  // ---------------------------------------------------
-  // Prevent useless adjustment
-  // ---------------------------------------------------
-
   if (movementType === "ADJUSTMENT" && previousStock === currentStock) {
     return variant;
   }
 
-  // ---------------------------------------------------
-  // Update Variant Stock
-  // ---------------------------------------------------
-
   variant.stock = currentStock;
 
   await variant.save({ session });
-
-  // ---------------------------------------------------
-  // Create Stock Movement
-  // ---------------------------------------------------
 
   await createStockMovement({
     product: product._id,
@@ -322,18 +245,11 @@ export const adjustStock = async ({
   return variant;
 };
 
-// =====================================================
 // GET LOW STOCK PRODUCTS
-// =====================================================
-
 export const getLowStockProducts = async ({ threshold = 10 } = {}) => {
   if (!Number.isInteger(threshold) || threshold < 0) {
     throw new Error("Low stock threshold must be a non-negative integer.");
   }
-
-  // -----------------------------------------------
-  // Non-variant products
-  // -----------------------------------------------
 
   const products = await Product.find({
     isActive: true,
@@ -347,10 +263,6 @@ export const getLowStockProducts = async ({ threshold = 10 } = {}) => {
     .sort({
       stock: 1,
     });
-
-  // -----------------------------------------------
-  // Variant products
-  // -----------------------------------------------
 
   const variants = await ProductVariant.find({
     isActive: true,
@@ -370,10 +282,7 @@ export const getLowStockProducts = async ({ threshold = 10 } = {}) => {
   };
 };
 
-// =====================================================
 // GET INVENTORY HISTORY
-// =====================================================
-
 export const getInventoryHistory = async ({
   page = 1,
   limit = 10,
@@ -394,10 +303,6 @@ export const getInventoryHistory = async ({
 
   const filter = {};
 
-  // -----------------------------------------------
-  // Movement type filter
-  // -----------------------------------------------
-
   if (movementType) {
     const allowedMovementTypes = ["IN", "OUT", "ADJUSTMENT", "RETURN"];
 
@@ -408,10 +313,6 @@ export const getInventoryHistory = async ({
     filter.movementType = movementType;
   }
 
-  // -----------------------------------------------
-  // Product filter
-  // -----------------------------------------------
-
   if (productId) {
     if (!mongoose.Types.ObjectId.isValid(productId)) {
       throw new Error("Invalid product ID.");
@@ -420,10 +321,6 @@ export const getInventoryHistory = async ({
     filter.product = productId;
   }
 
-  // -----------------------------------------------
-  // Variant filter
-  // -----------------------------------------------
-
   if (variantId) {
     if (!mongoose.Types.ObjectId.isValid(variantId)) {
       throw new Error("Invalid variant ID.");
@@ -431,10 +328,6 @@ export const getInventoryHistory = async ({
 
     filter.variant = variantId;
   }
-
-  // -----------------------------------------------
-  // Pagination
-  // -----------------------------------------------
 
   const total = await StockMovement.countDocuments(filter);
 
@@ -460,15 +353,9 @@ export const getInventoryHistory = async ({
   };
 };
 
-// =====================================================
 // GET INVENTORY SUMMARY
-// =====================================================
-
 export const getInventorySummaryService = async () => {
-  // -----------------------------------------------
   // Product counts
-  // -----------------------------------------------
-
   const totalProducts = await Product.countDocuments({
     isActive: true,
   });
@@ -483,18 +370,12 @@ export const getInventorySummaryService = async () => {
     hasVariants: false,
   });
 
-  // -----------------------------------------------
   // Variant count
-  // -----------------------------------------------
-
   const totalVariants = await ProductVariant.countDocuments({
     isActive: true,
   });
 
-  // -----------------------------------------------
   // Low stock
-  // -----------------------------------------------
-
   const lowStockProducts = await Product.countDocuments({
     isActive: true,
     hasVariants: false,
@@ -512,10 +393,7 @@ export const getInventorySummaryService = async () => {
     },
   });
 
-  // -----------------------------------------------
   // Out of stock
-  // -----------------------------------------------
-
   const outOfStockProducts = await Product.countDocuments({
     isActive: true,
     hasVariants: false,
@@ -527,10 +405,7 @@ export const getInventorySummaryService = async () => {
     stock: 0,
   });
 
-  // -----------------------------------------------
   // Inventory value - non-variant products
-  // -----------------------------------------------
-
   const productValueResult = await Product.aggregate([
     {
       $match: {

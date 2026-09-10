@@ -4,13 +4,13 @@ import {
   requestRegisterOtp,
   verifyRegisterOtp,
   loginCustomer,
+  refreshCustomerAccessToken,
   logoutCustomer,
   getCustomerProfile,
   updateCustomerProfile,
   requestForgotPasswordOtp,
   resetForgotPassword,
   changePassword,
-  requestDeleteAccountOtp,
   deleteAccount,
   requestChangeEmailOtp,
   verifyChangeEmailOtp,
@@ -33,6 +33,8 @@ router.post(
   authorizeRoles("CUSTOMER"),
   logoutCustomer, 
 );
+
+router.post("/refresh", refreshCustomerAccessToken);
 
 router.post("/google", googleLogin);
 
@@ -58,13 +60,6 @@ router.post(
   authenticate,
   authorizeRoles("CUSTOMER"),
   changePassword,
-);
-
-router.post(
-  "/delete-account/request-otp",
-  authenticate,
-  authorizeRoles("CUSTOMER"),
-  requestDeleteAccountOtp,
 );
 
 router.delete(

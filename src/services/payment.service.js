@@ -1,15 +1,13 @@
 import mongoose from "mongoose";
 import Order from "../models/order.model.js";
 import Payment from "../models/payment.model.js";
-import stripe from "../config/stripe.js";
-import ProductVariant from "../models/product-variant.model.js";
+import { getStripeClient } from "../config/stripe.js";
 import { createNotification } from "./notification.service.js";
 import User from "../models/user.model.js";
-import { createSaleFromOrder } from "./sales.service.js";
-import { adjustStock } from "./inventory.service.js";
 import { completeOrderService } from "./order-completion.service.js";
 
 export const createOrderCheckoutService = async (customerId, orderId) => {
+   const stripe = await getStripeClient();
   // Validate order ID
   if (!mongoose.Types.ObjectId.isValid(orderId)) {
     throw new Error("Invalid order ID.");
@@ -91,6 +89,7 @@ export const createOrderCheckoutService = async (customerId, orderId) => {
 };
 
 export const paymentSuccessService = async (sessionId, customerId) => {
+   const stripe = await getStripeClient();
   // Verify checkout session
   const session = await stripe.checkout.sessions.retrieve(sessionId);
 

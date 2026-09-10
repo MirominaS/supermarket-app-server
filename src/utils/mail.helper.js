@@ -1,26 +1,23 @@
 import axios from "axios";
 
-const BREVO_API_URL =
-  process.env.BREVO_API_URL || "https://api.brevo.com/v3";
+const BREVO_API_URL = process.env.BREVO_API_URL || "https://api.brevo.com/v3";
 
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const BREVO_SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL;
-const BREVO_SENDER_NAME =
-  process.env.BREVO_SENDER_NAME || "Supermarket";
+const BREVO_SENDER_NAME = process.env.BREVO_SENDER_NAME || "Supermarket";
 
-export const sendOtpEmail = async ({
-  recipientEmail,
-  recipientName,
-  otp,
-}) => {
+console.log("Brevo API URL:", BREVO_API_URL);
+console.log("Brevo API key exists:", Boolean(BREVO_API_KEY));
+console.log("Brevo API key prefix:", BREVO_API_KEY?.substring(0, 10));
+console.log("Brevo sender:", BREVO_SENDER_EMAIL);
+
+export const sendOtpEmail = async ({ recipientEmail, recipientName, otp }) => {
   if (!BREVO_API_KEY) {
     throw new Error("BREVO_API_KEY is not configured.");
   }
 
   if (!BREVO_SENDER_EMAIL) {
-    throw new Error(
-      "BREVO_SENDER_EMAIL is not configured."
-    );
+    throw new Error("BREVO_SENDER_EMAIL is not configured.");
   }
 
   try {
@@ -114,22 +111,16 @@ export const sendOtpEmail = async ({
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-      }
+      },
     );
 
     return response.data;
   } catch (error) {
-    console.error(
-      "Brevo email error:",
-      error.response?.data || error.message
-    );
+    console.error("Brevo email error:", error.response?.data || error.message);
 
-    throw new Error(
-      "Failed to send OTP email."
-    );
+    throw new Error("Failed to send OTP email.");
   }
 };
-
 
 // import { Resend } from "resend";
 

@@ -1,7 +1,13 @@
 import bcrypt from "bcryptjs";
 import User from "../models/user.model.js";
 import { sendOtpEmail } from "../utils/mail.helper.js";
-import { generateToken } from "../utils/jwt.js";
+import {
+  generateAccessToken,
+  generateRefreshToken,
+  verifyRefreshToken,
+} from "../utils/jwt.js";
+import { hashToken } from "../utils/hash-token.js";
+import RefreshToken from "../models/refresh-token.model.js";
 import {
   createOtp,
   validateOtp,
@@ -11,6 +17,7 @@ import { normalizePhoneNumber } from "../utils/phone.helper.js";
 import { OAuth2Client } from "google-auth-library";
 import { createNotification } from "./notification.service.js";
 import { validatePassword } from "../utils/password.helper.js";
+import AccountDeletion from "../models/account-deletion.model.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -138,7 +145,9 @@ export const verifyCustomerRegistrationOtp = async ({
 
   if (existingEmail) {
     await deleteOtp({
-      id: pendingRegistration._id,
+       email: normalizedEmail,
+  purpose: "REGISTER",
+  verificationType: normalizedVerificationType,
     });
 
     throw new Error("An account with this email already exists.");
@@ -177,7 +186,21 @@ export const verifyCustomerRegistrationOtp = async ({
     type: "ACCOUNT",
   });
 
-  const token = generateToken(customer);
+  // Generate access token
+  const accessToken = generateAccessToken(customer);
+
+  // Generate refresh token
+  const refreshToken = generateRefreshToken(customer);
+
+  // Hash refresh token before storing
+  const refreshTokenHash = hashToken(refreshToken);
+
+  // Store hashed refresh token
+  await RefreshToken.create({
+    user: customer._id,
+    tokenHash: refreshTokenHash,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  });
 
   //  Delete used OTP
   await deleteOtp({
@@ -186,7 +209,8 @@ export const verifyCustomerRegistrationOtp = async ({
 
   // Return token + customer
   return {
-    token,
+    accessToken,
+    refreshToken,
     customer: {
       id: customer._id,
       fullName: customer.fullName,
@@ -238,10 +262,21 @@ export const loginCustomerService = async ({ email, password }) => {
     throw new Error("Invalid email or password.");
   }
 
-  const token = generateToken(customer);
+  const accessToken = generateAccessToken(customer);
+
+  const refreshToken = generateRefreshToken(customer);
+
+  const refreshTokenHash = hashToken(refreshToken);
+
+  await RefreshToken.create({
+    user: customer._id,
+    tokenHash: refreshTokenHash,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  });
 
   return {
-    token,
+    accessToken,
+    refreshToken,
 
     customer: {
       id: customer._id,
@@ -252,6 +287,69 @@ export const loginCustomerService = async ({ email, password }) => {
       phoneVerified: customer.phoneVerified,
       role: customer.role,
     },
+  };
+};
+
+export const refreshCustomerAccessTokenService = async ({ refreshToken }) => {
+  if (!refreshToken) {
+    throw new Error("Refresh token is required.");
+  }
+
+  // Verify refresh token JWT
+  let decoded;
+
+  try {
+    decoded = verifyRefreshToken(refreshToken);
+  } catch {
+    throw new Error("Invalid or expired refresh token.");
+  }
+
+  // Make sure this is a refresh token
+  if (decoded.type !== "refresh") {
+    throw new Error("Invalid refresh token.");
+  }
+
+  // Hash the received refresh token
+  const refreshTokenHash = hashToken(refreshToken);
+
+  // Find hashed token in database
+  const storedToken = await RefreshToken.findOne({
+    tokenHash: refreshTokenHash,
+  });
+
+  if (!storedToken) {
+    throw new Error("Refresh token has been revoked or does not exist.");
+  }
+
+  // Check expiration
+  if (storedToken.expiresAt < new Date()) {
+    await RefreshToken.deleteOne({
+      _id: storedToken._id,
+    });
+
+    throw new Error("Refresh token has expired.");
+  }
+
+  // Find customer
+  const customer = await User.findOne({
+    _id: decoded.id,
+    role: "CUSTOMER",
+  });
+
+  if (!customer) {
+    throw new Error("Customer not found.");
+  }
+
+  // Check account status
+  if (!customer.isActive) {
+    throw new Error("Your account is inactive. Please contact support.");
+  }
+
+  // Generate new access token
+  const accessToken = generateAccessToken(customer);
+
+  return {
+    accessToken,
   };
 };
 
@@ -281,7 +379,10 @@ export const getCustomerProfileService = async (userId) => {
 };
 
 // UPDATE CUSTOMER PROFILE
-export const updateCustomerProfileService = async (userId, { fullName }) => {
+export const updateCustomerProfileService = async (
+  userId,
+  { fullName, gender, dateOfBirth },
+) => {
   const customer = await User.findOne({
     _id: userId,
     role: "CUSTOMER",
@@ -291,6 +392,7 @@ export const updateCustomerProfileService = async (userId, { fullName }) => {
     throw new Error("Customer not found.");
   }
 
+  // Update full name
   if (fullName !== undefined) {
     const name = fullName.trim();
 
@@ -301,6 +403,31 @@ export const updateCustomerProfileService = async (userId, { fullName }) => {
     customer.fullName = name;
   }
 
+  // Update gender 
+  if (gender !== undefined) {
+    customer.gender =
+      typeof gender === "string" ? gender.trim() || null : gender;
+  }
+
+  // Update date of birth
+  if (dateOfBirth !== undefined) {
+    if (dateOfBirth === null || dateOfBirth === "") {
+      customer.dateOfBirth = null;
+    } else {
+      const parsedDate = new Date(dateOfBirth);
+
+      if (Number.isNaN(parsedDate.getTime())) {
+        throw new Error("Invalid date of birth.");
+      }
+
+      if (parsedDate > new Date()) {
+        throw new Error("Date of birth cannot be in the future.");
+      }
+
+      customer.dateOfBirth = parsedDate;
+    }
+  }
+
   await customer.save();
 
   return {
@@ -308,13 +435,14 @@ export const updateCustomerProfileService = async (userId, { fullName }) => {
     fullName: customer.fullName,
     email: customer.email,
     phoneNumber: customer.phoneNumber,
+    gender: customer.gender,
+    dateOfBirth: customer.dateOfBirth,
     emailVerified: customer.emailVerified,
     phoneVerified: customer.phoneVerified,
     role: customer.role,
     isActive: customer.isActive,
   };
 };
-
 // REQUEST FORGOT PASSWORD OTP
 export const requestForgotPasswordOtpService = async ({ email }) => {
   // Validate
@@ -487,12 +615,15 @@ export const changePasswordService = async (
     message: "Password changed successfully.",
   };
 };
-//request  OTP for delete account
-export const requestDeleteAccountOtpService = async (userId, { password }) => {
+
+//delete account
+export const deleteAccountService = async (userId, { password, reason }) => {
+  // Validate password
   if (!password) {
     throw new Error("Password is required.");
   }
 
+  // Find customer
   const customer = await User.findOne({
     _id: userId,
     role: "CUSTOMER",
@@ -502,54 +633,34 @@ export const requestDeleteAccountOtpService = async (userId, { password }) => {
     throw new Error("Customer not found.");
   }
 
+  // Make sure this is a password-based account
+  if (!customer.password) {
+    throw new Error(
+      "This account does not have a password. Please use the appropriate account deletion method.",
+    );
+  }
+
+  // Verify password
   const isPasswordCorrect = await bcrypt.compare(password, customer.password);
 
   if (!isPasswordCorrect) {
     throw new Error("Incorrect password.");
   }
 
-  const { otp } = await createOtp({
-    email: customer.email,
-    purpose: "DELETE_ACCOUNT",
-    verificationType: "EMAIL",
+  // Optional reason
+  const normalizedReason = typeof reason === "string" ? reason.trim() : "";
+
+  await AccountDeletion.create({
+    user: customer._id,
+    reason: normalizedReason,
   });
 
-  await sendOtpEmail({
-    recipientEmail: customer.email,
-    recipientName: customer.fullName,
-    otp,
-  });
-
-  return {
-    message: "OTP has been sent to your email.",
-  };
-};
-
-export const deleteAccountService = async (userId, { otp }) => {
-  if (!otp) {
-    throw new Error("OTP is required.");
-  }
-
-  const customer = await User.findOne({
-    _id: userId,
-    role: "CUSTOMER",
-  });
-
-  if (!customer) {
-    throw new Error("Customer not found.");
-  }
-
-  const otpRecord = await validateOtp({
-    email: customer.email,
-    otp,
-    purpose: "DELETE_ACCOUNT",
-    verificationType: "EMAIL",
-  });
-
+  // Delete customer
   await User.findByIdAndDelete(customer._id);
 
-  await deleteOtp({
-    id: otpRecord._id,
+  // Revoke all refresh tokens
+  await RefreshToken.deleteMany({
+    user: customer._id,
   });
 
   return {
@@ -895,11 +1006,25 @@ export const googleLoginService = async ({ idToken }) => {
     });
   }
 
-  // Generate JWT
-  const token = generateToken(customer);
+  // Generate access token
+  const accessToken = generateAccessToken(customer);
+
+  // Generate refresh token
+  const refreshToken = generateRefreshToken(customer);
+
+  // Hash refresh token before storing
+  const refreshTokenHash = hashToken(refreshToken);
+
+  // Store hashed refresh token
+  await RefreshToken.create({
+    user: customer._id,
+    tokenHash: refreshTokenHash,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  });
 
   return {
-    token,
+    accessToken,
+    refreshToken,
     customer: {
       id: customer._id,
       fullName: customer.fullName,

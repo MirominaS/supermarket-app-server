@@ -40,34 +40,33 @@ export const getCustomerProductsService = async ({
 
     filter.category = category;
   }
-  
-  const availableVariantProducts =
-    await ProductVariant.distinct("product", {
-      isActive: true,
-      stock: {
-        $gt: 0,
-      },
-    });
 
- filter.$or = [
-  // Products without variants
-  {
-    hasVariants: {
-      $ne: true,
-    },
+  const availableVariantProducts = await ProductVariant.distinct("product", {
+    isActive: true,
     stock: {
       $gt: 0,
     },
-  },
+  });
 
-  // Products with variants
-  {
-    hasVariants: true,
-    _id: {
-      $in: availableVariantProducts,
+  filter.$or = [
+    // Products without variants
+    {
+      hasVariants: {
+        $ne: true,
+      },
+      stock: {
+        $gt: 0,
+      },
     },
-  },
-];
+
+    // Products with variants
+    {
+      hasVariants: true,
+      _id: {
+        $in: availableVariantProducts,
+      },
+    },
+  ];
 
   // Sorting
   let sortOption = {
@@ -101,7 +100,7 @@ export const getCustomerProductsService = async ({
 
     default:
       throw new Error(
-        "Invalid sort option. Use newest, oldest, name_asc or name_desc."
+        "Invalid sort option. Use newest, oldest, name_asc or name_desc.",
       );
   }
 
@@ -200,5 +199,63 @@ export const getCustomerProductByIdService = async (productId) => {
   return {
     ...product.toObject(),
     variants,
+  };
+};
+
+export const searchCustomerProductsService = async ({
+  q,
+  page = 1,
+  limit = 10,
+}) => {
+  page = Number(page);
+  limit = Number(limit);
+
+  if (!q || !q.trim()) {
+    throw new Error("Search query is required.");
+  }
+
+  if (!Number.isInteger(page) || page < 1) {
+    throw new Error("Invalid page.");
+  }
+
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error("Invalid limit.");
+  }
+
+  const searchRegex = new RegExp(q.trim(), "i");
+
+  const filter = {
+    isActive: true,
+    $or: [
+      {
+        name: searchRegex,
+      },
+      {
+        description: searchRegex,
+      },
+    ],
+  };
+
+  const total = await Product.countDocuments(filter);
+
+  const products = await Product.find(filter)
+    .populate("category")
+    .populate("image")
+    .sort({ name: 1 })
+    .skip((page - 1) * limit)
+    .limit(limit);
+
+  const totalPages = Math.ceil(total / limit);
+
+  return {
+    products,
+    pagination: {
+      total,
+      page,
+      limit,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    },
   };
 };

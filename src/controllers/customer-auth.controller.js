@@ -2,12 +2,12 @@ import {
   requestCustomerRegistrationOtp,
   verifyCustomerRegistrationOtp,
   loginCustomerService,
+  refreshCustomerAccessTokenService,
   getCustomerProfileService,
   updateCustomerProfileService,
   requestForgotPasswordOtpService,
   resetForgotPasswordService,
   changePasswordService,
-  requestDeleteAccountOtpService,
   deleteAccountService,
   requestChangeEmailOtpService,
   verifyChangeEmailOtpService,
@@ -15,6 +15,9 @@ import {
   verifyChangePhoneOtpService,
   googleLoginService,
 } from "../services/customer-auth.service.js";
+
+import { hashToken } from "../utils/hash-token.js";
+import RefreshToken from "../models/refresh-token.model.js";
 
 // Request Customer Registration OTP
 export const requestRegisterOtp = async (req, res) => {
@@ -68,7 +71,9 @@ export const verifyRegisterOtp = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "OTP verified successfully. Customer account created.",
-      customer,
+      accessToken: customer.accessToken,
+      refreshToken: customer.refreshToken,
+      customer: customer.customer,
     });
   } catch (error) {
     console.error("Verify registration OTP error:", error);
@@ -93,7 +98,8 @@ export const loginCustomer = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Login successful.",
-      token: result.token,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
       customer: result.customer,
     });
   } catch (error) {
@@ -106,9 +112,49 @@ export const loginCustomer = async (req, res) => {
   }
 };
 
+export const refreshCustomerAccessToken = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    const result = await refreshCustomerAccessTokenService({
+      refreshToken,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Access token refreshed successfully.",
+      accessToken: result.accessToken,
+    });
+  } catch (error) {
+    console.error("Customer refresh token error:", error);
+
+    return res.status(401).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 //LOGOUT
 export const logoutCustomer = async (req, res) => {
   try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: "Refresh token is required.",
+      });
+    }
+
+    // Hash the refresh token
+    const refreshTokenHash = hashToken(refreshToken);
+
+    // Delete it from database
+    await RefreshToken.deleteOne({
+      tokenHash: refreshTokenHash,
+    });
+
     return res.status(200).json({
       success: true,
       message: "Logged out successfully.",
@@ -202,23 +248,6 @@ export const resetForgotPassword = async (req, res) => {
 export const changePassword = async (req, res) => {
   try {
     const result = await changePasswordService(req.user._id, req.body);
-
-    return res.status(200).json({
-      success: true,
-      ...result,
-    });
-  } catch (error) {
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// Request Delete Account OTP
-export const requestDeleteAccountOtp = async (req, res) => {
-  try {
-    const result = await requestDeleteAccountOtpService(req.user._id, req.body);
 
     return res.status(200).json({
       success: true,
@@ -337,7 +366,8 @@ export const googleLogin = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Google login successful.",
-      token: result.token,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
       customer: result.customer,
     });
   } catch (error) {

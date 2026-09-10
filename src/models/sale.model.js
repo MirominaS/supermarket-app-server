@@ -8,9 +8,22 @@ const saleItemSchema = new mongoose.Schema(
       required: true,
     },
 
+     variant: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ProductVariant",
+      default: null,
+    },
+
+
     productName: {
       type: String,
       required: true,
+      trim: true,
+    },
+
+    variantName: {
+      type: String,
+      default: null,
       trim: true,
     },
 

@@ -199,7 +199,7 @@ export const exportSales = async (req, res) => {
       paymentMethod,
     } = req.query;
 
-    const { buffer, count } = await exportSalesService({
+    const { buffer } = await exportSalesService({
       period,
       startDate,
       endDate,

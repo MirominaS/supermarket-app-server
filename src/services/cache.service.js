@@ -26,4 +26,10 @@ export const setCache = async (key, data, ttl = 60) => {
 };
 
 
-
+export const deleteCache = async (key) => {
+  try {
+    await redis.del(key);
+  } catch (error) {
+    console.error(`Cache DELETE error [${key}]:`, error);
+  }
+};
