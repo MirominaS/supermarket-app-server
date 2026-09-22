@@ -14,7 +14,11 @@ export const uploadMedia = async (req, res) => {
 
     const { folder } = req.body;
 
-    const allowedFolders = ["product-images", "customer-profile-images"];
+    const allowedFolders = [
+      "product-images",
+      "customer-profile-images",
+      "offer-images",
+    ];
 
     if (!allowedFolders.includes(folder)) {
       return res.status(400).json({
@@ -39,9 +43,20 @@ export const uploadMedia = async (req, res) => {
       });
     }
 
+    // Offer images
+    if (folder === "offer-images" && req.user.role !== "ADMIN") {
+      return res.status(403).json({
+        success: false,
+        message: "Only admins can upload offer images.",
+      });
+    }
+
     const result = await uploadToR2(req.file, folder);
 
-    const visibility = folder === "product-images" ? "public" : "private";
+    const visibility =
+      folder === "product-images" || folder === "offer-images"
+        ? "public"
+        : "private";
 
     const media = await Media.create({
       key: result.key,
@@ -91,11 +106,11 @@ export const getMediaAccessUrl = async (req, res) => {
       });
     }
 
-    // Only product images are allowed through this endpoint
-    if (media.folder !== "product-images") {
+    // Only product and offer images are allowed through this endpoint
+    if (media.folder !== "product-images" && media.folder !== "offer-images") {
       return res.status(400).json({
         success: false,
-        message: "This endpoint is only for product images.",
+        message: "This endpoint is only for product and offer images.",
       });
     }
 
