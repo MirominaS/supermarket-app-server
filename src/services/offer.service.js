@@ -1,8 +1,10 @@
+import mongoose from "mongoose";
 import Offer from "../models/offer.model.js";
 import Product from "../models/product.model.js";
 import ProductVariant from "../models/product-variant.model.js";
 import User from "../models/user.model.js";
 import { createNotification } from "./notification.service.js";
+import Media from "../models/media.model.js";
 
 const validateOfferDates = (startDate, endDate) => {
   const start = new Date(startDate);
@@ -85,6 +87,28 @@ const validateOfferItems = async (type, items) => {
   }
 };
 
+const validateOfferImage = async (imageId) => {
+  if (!imageId) {
+    throw new Error("Offer image is required.");
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(imageId)) {
+    throw new Error("Invalid offer image ID.");
+  }
+
+  const image = await Media.findOne({
+    _id: imageId,
+    folder: "offer-images",
+    type: "image",
+  });
+
+  if (!image) {
+    throw new Error("Offer image not found.");
+  }
+
+  return image;
+};
+
 const checkDuplicateOffer = async ({
   name,
   type,
@@ -120,6 +144,8 @@ const checkDuplicateOffer = async ({
 
 export const createOfferService = async ({
   name,
+  description,
+  image,
   type,
   startDate,
   endDate,
@@ -137,6 +163,12 @@ export const createOfferService = async ({
 
   await validateOfferItems(type, items);
 
+  if (!description || !description.trim()) {
+    throw new Error("Offer description is required.");
+  }
+
+  await validateOfferImage(image);
+
   // Prevent duplicate offer
   await checkDuplicateOffer({
     name,
@@ -152,6 +184,8 @@ export const createOfferService = async ({
     startDate: start,
     endDate: end,
     items,
+    description: description.trim(),
+    image,
     isActive: true,
   });
 
@@ -175,6 +209,7 @@ export const createOfferService = async ({
   );
 
   return await Offer.findById(offer._id)
+    .populate("image")
     .populate({
       path: "items.product",
       populate: {
@@ -186,6 +221,7 @@ export const createOfferService = async ({
 
 export const getOffersService = async () => {
   return await Offer.find()
+    .populate("image")
     .populate({
       path: "items.product",
       populate: {
@@ -202,6 +238,7 @@ export const getOfferByIdService = async (offerId) => {
   const offer = await Offer.findOne({
     _id: offerId,
   })
+    .populate("image")
     .populate({
       path: "items.product",
       populate: {
@@ -225,6 +262,8 @@ export const updateOfferService = async (offerId, updateData) => {
   }
 
   const name = updateData.name ?? offer.name;
+  const description = updateData.description ?? offer.description;
+  const image = updateData.image ?? offer.image;
   const type = updateData.type ?? offer.type;
   const startDate = updateData.startDate ?? offer.startDate;
   const endDate = updateData.endDate ?? offer.endDate;
@@ -235,22 +274,27 @@ export const updateOfferService = async (offerId, updateData) => {
     throw new Error("Offer name is required.");
   }
 
+  if (!description || !description.trim()) {
+    throw new Error("Offer description is required.");
+  }
+
+  await validateOfferImage(image);
+
   // Validate type
   if (!["SINGLE", "COMBO"].includes(type)) {
     throw new Error("Offer type must be SINGLE or COMBO.");
   }
 
   // Validate dates
-  const { start, end } = validateOfferDates(
-    startDate,
-    endDate,
-  );
+  const { start, end } = validateOfferDates(startDate, endDate);
 
   // Validate items
   await validateOfferItems(type, items);
 
   // Update offer
   offer.name = name.trim();
+  offer.description = description.trim();
+  offer.image = image;
   offer.type = type;
   offer.startDate = start;
   offer.endDate = end;
@@ -290,6 +334,7 @@ export const updateOfferService = async (offerId, updateData) => {
   }
 
   return await Offer.findById(offer._id)
+    .populate("image")
     .populate({
       path: "items.product",
       populate: {

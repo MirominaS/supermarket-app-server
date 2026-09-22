@@ -9,23 +9,27 @@ import {
 export const createOffer = async (req, res) => {
   try {
     const {
-      name,
+       name,
+      description,
+      image,
       type,
       startDate,
       endDate,
       items,
     } = req.body;
 
-    if (!name || !type || !startDate || !endDate || !items) {
+    if (!name || !description || !image || !type || !startDate || !endDate || !items) {
       return res.status(400).json({
         success: false,
         message:
-          "Name, type, start date, end date and items are required.",
+          "Name, description, image, type, start date, end date and items are required.",
       });
     }
 
     const offer = await createOfferService({
       name,
+      description,
+      image,
       type,
       startDate,
       endDate,

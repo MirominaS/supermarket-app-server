@@ -33,6 +33,19 @@ const offerSchema = new mongoose.Schema(
       trim: true,
     },
 
+    description: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+     image: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Media",
+      required: true,
+    },
+
+
     type: {
       type: String,
       enum: ["SINGLE", "COMBO"],
