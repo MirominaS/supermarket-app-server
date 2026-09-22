@@ -61,6 +61,14 @@ export const updateOrderStatusService = async (orderId, status) => {
     "CANCELLED",
   ];
 
+  const statusOrder = {
+    PENDING: 1,
+    CONFIRMED: 2,
+    PROCESSING: 3,
+    READY: 4,
+    COMPLETED: 5,
+  };
+
   if (!allowedStatuses.includes(status)) {
     throw new Error("Invalid order status.");
   }
@@ -77,6 +85,15 @@ export const updateOrderStatusService = async (orderId, status) => {
 
   if (order.status === "COMPLETED") {
     throw new Error("Completed orders cannot be updated.");
+  }
+
+  if (
+    status !== "CANCELLED" &&
+    statusOrder[status] < statusOrder[order.status]
+  ) {
+    throw new Error(
+      `Order status cannot move backward from ${order.status} to ${status}.`,
+    );
   }
 
   order.status = status;

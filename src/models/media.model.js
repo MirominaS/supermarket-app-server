@@ -39,10 +39,7 @@ const mediaSchema = new mongoose.Schema(
 
     folder: {
       type: String,
-      enum: [
-        "product-images",
-        "customer-profile-images",
-      ],
+      enum: ["product-images", "customer-profile-images", "offer-images"],
       required: true,
     },
 
@@ -54,7 +51,7 @@ const mediaSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 const Media = mongoose.model("Media", mediaSchema);

@@ -10,6 +10,14 @@ export const getCustomerOffersService = async () => {
     endDate: { $gte: today },
   })
     .populate({
+      path: "image",
+      match: {
+        folder: "offer-images",
+        type: "image",
+        visibility: "public",
+      },
+    })
+    .populate({
       path: "items.product",
       match: {
         isActive: true,
@@ -45,6 +53,14 @@ export const getCustomerOfferByIdService = async (offerId) => {
     startDate: { $lte: today },
     endDate: { $gte: today },
   })
+    .populate({
+      path: "image",
+      match: {
+        folder: "offer-images",
+        type: "image",
+        visibility: "public",
+      },
+    })
     .populate({
       path: "items.product",
       match: {

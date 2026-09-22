@@ -43,7 +43,6 @@ app.use("/api/admin/sales", salesRoutes);
 app.use("/api/admin/users", userRoutes);
 app.use("/api/admin/customers", customerRoutes);
 app.use("/api/admin/dashboard", dashboardRoutes);
-app.use("/api/media", mediaRoutes);
 app.use("/api/admin/inventory", inventoryRoutes);
 app.use("/api/admin/suppliers", supplierRoutes);
 app.use("/api/admin/purchases", purchaseRoutes);
@@ -58,6 +57,7 @@ app.use("/api/customer/orders", customerOrderRoutes);
 app.use("/api/customer/addresses", customerAddressRoutes);
 app.use("/api/customer/wishlist", customerWishlistRoutes);
 
+app.use("/api/media", mediaRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/invoices", invoiceRoutes);
