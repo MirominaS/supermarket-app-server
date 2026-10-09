@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Product from "../models/product.model.js";
 import ProductVariant from "../models/product-variant.model.js";
+import { enrichCustomerProductsWithOffers } from "../utils/enrich-customer-products.js";
 
 export const getCustomerProductsService = async ({
   page = 1,
@@ -141,8 +142,10 @@ export const getCustomerProductsService = async ({
 
   const totalPages = Math.ceil(total / limit);
 
+  const enrichedProducts = await enrichCustomerProductsWithOffers(result);
+
   return {
-    products: result,
+    products: enrichedProducts,
 
     pagination: {
       total,
@@ -154,6 +157,7 @@ export const getCustomerProductsService = async ({
     },
   };
 };
+
 export const getCustomerProductByIdService = async (productId) => {
   if (!mongoose.Types.ObjectId.isValid(productId)) {
     throw new Error("Invalid product ID.");
@@ -172,13 +176,12 @@ export const getCustomerProductByIdService = async (productId) => {
 
   let variants = [];
 
+  // Product with variants
   if (product.hasVariants) {
     variants = await ProductVariant.find({
       product: product._id,
       isActive: true,
-      stock: {
-        $gt: 0,
-      },
+      stock: { $gt: 0 },
     }).sort({
       price: 1,
     });
@@ -196,10 +199,15 @@ export const getCustomerProductByIdService = async (productId) => {
     throw new Error("Product is out of stock.");
   }
 
-  return {
+  const result = {
     ...product.toObject(),
     variants,
   };
+
+  //Attach active offers to the product or its variants
+  const [enrichedProduct] = await enrichCustomerProductsWithOffers([result]);
+
+  return enrichedProduct;
 };
 
 export const searchCustomerProductsService = async ({
