@@ -24,68 +24,119 @@ const validateOfferDates = (startDate, endDate) => {
   };
 };
 
+
 const validateOfferItems = async (type, items) => {
   if (!Array.isArray(items)) {
     throw new Error("Offer items must be an array.");
   }
 
   if (type === "SINGLE" && items.length !== 1) {
-    throw new Error("Single offer must contain exactly one variant.");
+    throw new Error("Single offer must contain exactly one item.");
   }
 
   if (type === "COMBO" && items.length < 2) {
-    throw new Error("Combo offer must contain at least two variants.");
+    throw new Error("Combo offer must contain at least two items.");
   }
 
-  // Prevent duplicate variants
-  const variantIds = items.map((item) => item.variant.toString());
+  const itemKeys = [];
 
-  const uniqueVariantIds = new Set(variantIds);
-
-  if (variantIds.length !== uniqueVariantIds.size) {
-    throw new Error("The same variant cannot be added more than once.");
-  }
-
+  // First validate the structure of every item.
   for (const item of items) {
-    if (!item.product) {
-      throw new Error("Product is required.");
+    if (!item || typeof item !== "object") {
+      throw new Error("Each offer item must be an object.");
     }
 
-    if (!item.variant) {
-      throw new Error("Variant is required.");
+    if (
+      !item.product ||
+      !mongoose.Types.ObjectId.isValid(item.product)
+    ) {
+      throw new Error("A valid product ID is required.");
     }
 
-    if (item.price === undefined || item.price === null) {
-      throw new Error("Offer price is required.");
+    if (
+      item.variant !== null &&
+      !mongoose.Types.ObjectId.isValid(item.variant)
+    ) {
+      throw new Error("Invalid variant ID.");
     }
 
-    if (typeof item.price !== "number" || item.price < 0) {
-      throw new Error("Offer price must be greater than or equal to 0.");
+    if (
+      typeof item.price !== "number" ||
+      !Number.isFinite(item.price) ||
+      item.price < 0
+    ) {
+      throw new Error(
+        "Offer price must be a finite non-negative number."
+      );
     }
 
-    const product = await Product.findById(item.product);
+    // A product and a variant use different identifiers.
+    const key = item.variant
+      ? `VARIANT:${item.variant.toString()}`
+      : `PRODUCT:${item.product.toString()}`;
 
-    if (!product || !product.isActive) {
-      throw new Error("Product not found.");
-    }
+    itemKeys.push(key);
+  }
 
-    const variant = await ProductVariant.findOne({
-      _id: item.variant,
-      product: product._id,
+  if (new Set(itemKeys).size !== itemKeys.length) {
+    throw new Error(
+      "The same product or variant cannot be added more than once."
+    );
+  }
+
+  // Now validate each product and its correct price source.
+  for (const item of items) {
+    const product = await Product.findOne({
+      _id: item.product,
       isActive: true,
     });
 
-    if (!variant) {
-      throw new Error(`Variant does not belong to product "${product.name}".`);
+    if (!product) {
+      throw new Error("Product not found or inactive.");
     }
 
-    if (item.price > variant.price) {
+    let regularPrice;
+
+    if (product.hasVariants) {
+      // Variant products must specify a variant.
+      if (!item.variant) {
+        throw new Error(
+          `Select a variant for "${product.name}".`
+        );
+      }
+
+      const variant = await ProductVariant.findOne({
+        _id: item.variant,
+        product: product._id,
+        isActive: true,
+      });
+
+      if (!variant) {
+        throw new Error(
+          `Variant does not belong to "${product.name}" or is inactive.`
+        );
+      }
+
+      regularPrice = variant.price;
+    } else {
+      // Standalone products must not specify a variant.
+      if (item.variant) {
+        throw new Error(
+          `"${product.name}" does not support variants.`
+        );
+      }
+
+      regularPrice = product.price;
+    }
+
+    if (item.price > regularPrice) {
       throw new Error(
-        `Offer price cannot exceed normal price of ${variant.name}.`,
+        `Offer price cannot exceed the normal price of "${product.name}".`
       );
     }
   }
 };
+
 
 const validateOfferImage = async (imageId) => {
   if (!imageId) {
@@ -100,13 +151,21 @@ const validateOfferImage = async (imageId) => {
     _id: imageId,
     folder: "offer-images",
     type: "image",
+    visibility: "public",
   });
 
   if (!image) {
-    throw new Error("Offer image not found.");
+    throw new Error("Offer image not found or is not publicly accessible.");
   }
 
   return image;
+};
+
+
+const getOfferItemKey = (item) => {
+  return item.variant
+    ? `VARIANT:${item.variant.toString()}`
+    : `PRODUCT:${item.product.toString()}`;
 };
 
 const checkDuplicateOffer = async ({
@@ -115,32 +174,39 @@ const checkDuplicateOffer = async ({
   startDate,
   endDate,
   items,
+  excludeOfferId,
 }) => {
-  const variantIds = items.map((item) => item.variant.toString());
+  const itemKeys = items.map(getOfferItemKey);
 
-  const existingOffers = await Offer.find({
+  const filter = {
     name: name.trim(),
     type,
     isActive: true,
-
-    // Date ranges overlap
     startDate: { $lt: endDate },
     endDate: { $gt: startDate },
-  });
+  };
+
+  if (excludeOfferId) {
+    filter._id = { $ne: excludeOfferId };
+  }
+
+  const existingOffers = await Offer.find(filter);
 
   for (const offer of existingOffers) {
-    const existingVariantIds = offer.items.map((item) =>
-      item.variant.toString(),
-    );
+    const existingKeys = offer.items.map(getOfferItemKey);
 
-    if (
-      existingVariantIds.length === variantIds.length &&
-      existingVariantIds.every((id) => variantIds.includes(id))
-    ) {
-      throw new Error("An identical offer already exists for this period.");
+    const sameItems =
+      existingKeys.length === itemKeys.length &&
+      existingKeys.every((key) => itemKeys.includes(key));
+
+    if (sameItems) {
+      throw new Error(
+        "An identical offer already exists for this period."
+      );
     }
   }
 };
+
 
 export const createOfferService = async ({
   name,
@@ -288,8 +354,16 @@ export const updateOfferService = async (offerId, updateData) => {
   // Validate dates
   const { start, end } = validateOfferDates(startDate, endDate);
 
-  // Validate items
   await validateOfferItems(type, items);
+
+  await checkDuplicateOffer({
+    name,
+    type,
+    startDate: start,
+    endDate: end,
+    items,
+    excludeOfferId: offer._id,
+  });
 
   // Update offer
   offer.name = name.trim();

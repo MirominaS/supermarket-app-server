@@ -8,7 +8,6 @@ const customerOtpSchema = new mongoose.Schema(
       enum: [
         "REGISTER",
         "FORGOT_PASSWORD",
-        "CHANGE_EMAIL",
         "CHANGE_PHONE",
         "DELETE_ACCOUNT",
       ],

@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import User from "../models/user.model.js";
 import { sendOtpEmail } from "../utils/mail.helper.js";
 import {
@@ -12,12 +13,21 @@ import {
   createOtp,
   validateOtp,
   deleteOtp,
+  checkOtpResendAllowed,
+  recordOtpResend,
+  ensureNoActiveOtp,
 } from "./otp/customer-otp.service.js";
+
+import { otpCacheKeys } from "../utils/otp-cache-key.js";
+
+import { getCache, setCache, deleteCache } from "./cache.service.js";
 import { normalizePhoneNumber } from "../utils/phone.helper.js";
 import { OAuth2Client } from "google-auth-library";
 import { createNotification } from "./notification.service.js";
 import { validatePassword } from "../utils/password.helper.js";
 import AccountDeletion from "../models/account-deletion.model.js";
+import { passwordResetCacheKeys } from "../utils/password-reset-cache-key.js";
+import { phoneChangeCacheKeys } from "../utils/phone-change-cache-key.js";
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -27,20 +37,12 @@ export const requestCustomerRegistrationOtp = async ({
   email,
   phoneNumber,
   password,
-  confirmPassword,
   verificationType,
 }) => {
   // Validate required fields
-  if (
-    !fullName ||
-    !email ||
-    !phoneNumber ||
-    !password ||
-    !confirmPassword ||
-    !verificationType
-  ) {
+  if (!fullName || !email || !phoneNumber || !password || !verificationType) {
     throw new Error(
-      "Full name, email, phone number, password, confirm password and verification type are required.",
+      "Full name, email, phone number, password and verification type are required.",
     );
   }
   // Normalize values
@@ -52,10 +54,6 @@ export const requestCustomerRegistrationOtp = async ({
   // Validate verification type
   if (!["EMAIL", "PHONE"].includes(normalizedVerificationType)) {
     throw new Error("Verification type must be EMAIL or PHONE.");
-  }
-  // Validate password
-  if (password !== confirmPassword) {
-    throw new Error("Password and confirm password do not match.");
   }
 
   validatePassword(password);
@@ -78,6 +76,12 @@ export const requestCustomerRegistrationOtp = async ({
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
+
+  await ensureNoActiveOtp({
+    email: normalizedEmail,
+    purpose: "REGISTER",
+    verificationType: normalizedVerificationType,
+  });
 
   const { otp } = await createOtp({
     email: normalizedEmail,
@@ -108,6 +112,72 @@ export const requestCustomerRegistrationOtp = async ({
       normalizedVerificationType === "EMAIL"
         ? "OTP sent successfully to your email."
         : "OTP generated successfully. Phone SMS sending will be added later.",
+  };
+};
+
+export const resendCustomerRegistrationOtp = async ({
+  email,
+  verificationType,
+}) => {
+  if (!email || !verificationType) {
+    throw new Error("Email and verification type are required.");
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const normalizedVerificationType = verificationType.trim().toUpperCase();
+
+  if (!["EMAIL", "PHONE"].includes(normalizedVerificationType)) {
+    throw new Error("Verification type must be EMAIL or PHONE.");
+  }
+
+  if (normalizedVerificationType === "PHONE") {
+    throw new Error("Phone SMS delivery is not implemented yet.");
+  }
+
+  const purpose = "REGISTER";
+
+  const resendState = await checkOtpResendAllowed({
+    email: normalizedEmail,
+    purpose,
+    verificationType: normalizedVerificationType,
+  });
+
+  // Retrieve the existing pending registration details.
+  const cacheKey = otpCacheKeys.byEmailAndPurpose(
+    normalizedEmail,
+    purpose,
+    normalizedVerificationType,
+  );
+
+  const pendingRegistration = await getCache(cacheKey);
+
+  if (!pendingRegistration) {
+    throw new Error(
+      "Registration details have expired. Please submit the registration form again.",
+    );
+  }
+
+  const { otp } = await createOtp({
+    email: normalizedEmail,
+    purpose,
+    verificationType: normalizedVerificationType,
+    data: {
+      fullName: pendingRegistration.fullName,
+      phoneNumber: pendingRegistration.phoneNumber,
+      passwordHash: pendingRegistration.passwordHash,
+    },
+  });
+
+  await sendOtpEmail({
+    recipientEmail: normalizedEmail,
+    recipientName: pendingRegistration.fullName,
+    otp,
+  });
+
+  await recordOtpResend(resendState);
+
+  return {
+    message: "A new registration OTP has been sent to your email.",
   };
 };
 
@@ -145,9 +215,9 @@ export const verifyCustomerRegistrationOtp = async ({
 
   if (existingEmail) {
     await deleteOtp({
-       email: normalizedEmail,
-  purpose: "REGISTER",
-  verificationType: normalizedVerificationType,
+      email: normalizedEmail,
+      purpose: "REGISTER",
+      verificationType: normalizedVerificationType,
     });
 
     throw new Error("An account with this email already exists.");
@@ -403,7 +473,7 @@ export const updateCustomerProfileService = async (
     customer.fullName = name;
   }
 
-  // Update gender 
+  // Update gender
   if (gender !== undefined) {
     customer.gender =
       typeof gender === "string" ? gender.trim() || null : gender;
@@ -445,7 +515,6 @@ export const updateCustomerProfileService = async (
 };
 // REQUEST FORGOT PASSWORD OTP
 export const requestForgotPasswordOtpService = async ({ email }) => {
-  // Validate
   if (!email) {
     throw new Error("Email is required.");
   }
@@ -460,6 +529,12 @@ export const requestForgotPasswordOtpService = async ({ email }) => {
   if (!customer) {
     throw new Error("Customer not found.");
   }
+
+  await ensureNoActiveOtp({
+    email: normalizedEmail,
+    purpose: "FORGOT_PASSWORD",
+    verificationType: "EMAIL",
+  });
 
   const { otp } = await createOtp({
     email: normalizedEmail,
@@ -478,66 +553,125 @@ export const requestForgotPasswordOtpService = async ({ email }) => {
   };
 };
 
-// RESET FORGOT PASSWORD
-export const resetForgotPasswordService = async ({
-  email,
-  otp,
-  newPassword,
-  confirmPassword,
-}) => {
-  // Validate required fields
-  if (!email || !otp || !newPassword || !confirmPassword) {
-    throw new Error(
-      "Email, OTP, new password and confirm password are required.",
-    );
+export const resendForgotPasswordOtpService = async ({ email }) => {
+  if (!email || typeof email !== "string") {
+    throw new Error("Email is required.");
   }
 
   const normalizedEmail = email.trim().toLowerCase();
 
-  // Validate password
-  if (newPassword !== confirmPassword) {
-    throw new Error("New password and confirm password do not match.");
-  }
-
-  validatePassword(newPassword);
-
-  // Validate OTP
-  const forgotPasswordOtp = await validateOtp({
-    email: normalizedEmail,
-    otp,
-    purpose: "FORGOT_PASSWORD",
-    verificationType: "EMAIL",
-  });
-
-  // Find customer
   const customer = await User.findOne({
     email: normalizedEmail,
     role: "CUSTOMER",
   });
 
   if (!customer) {
-    await deleteOtp({
-      id: forgotPasswordOtp._id,
-    });
+    // Avoid revealing whether an account exists.
+    throw new Error("Unable to process this request.");
+  }
 
+  const purpose = "FORGOT_PASSWORD";
+  const verificationType = "EMAIL";
+
+  const resendState = await checkOtpResendAllowed({
+    email: normalizedEmail,
+    purpose,
+    verificationType,
+  });
+
+  const { otp } = await createOtp({
+    email: normalizedEmail,
+    purpose,
+    verificationType,
+  });
+
+  await sendOtpEmail({
+    recipientEmail: normalizedEmail,
+    recipientName: customer.fullName,
+    otp,
+  });
+
+  await recordOtpResend(resendState);
+
+  return {
+    message: "If the request is eligible, a new OTP has been sent.",
+  };
+};
+
+//VERIFY OTP
+export const verifyForgotPasswordOtpService = async ({ email, otp }) => {
+  if (!email || !otp) {
+    throw new Error("Email and OTP are required.");
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  await validateOtp({
+    email: normalizedEmail,
+    otp,
+    purpose: "FORGOT_PASSWORD",
+    verificationType: "EMAIL",
+  });
+
+  await deleteOtp({
+    email: normalizedEmail,
+    purpose: "FORGOT_PASSWORD",
+    verificationType: "EMAIL",
+  });
+
+  const resetToken = crypto.randomBytes(32).toString("hex");
+
+  const cacheKey = passwordResetCacheKeys.verificationToken(resetToken);
+
+  await setCache(cacheKey, { email: normalizedEmail }, 10 * 60);
+
+  return {
+    message: "OTP verified successfully.",
+    resetToken,
+  };
+};
+
+// RESET FORGOT PASSWORD
+export const resetForgotPasswordService = async ({
+  resetToken,
+  newPassword,
+}) => {
+  if (!resetToken || !newPassword) {
+    throw new Error("Reset token and new password are required.");
+  }
+
+  validatePassword(newPassword);
+
+  const cacheKey = passwordResetCacheKeys.verificationToken(resetToken);
+
+  const tokenData = await getCache(cacheKey);
+
+  if (!tokenData || !tokenData.email) {
+    throw new Error(
+      "Invalid or expired reset token. Please verify your OTP again.",
+    );
+  }
+
+  const customer = await User.findOne({
+    email: tokenData.email,
+    role: "CUSTOMER",
+  });
+
+  if (!customer) {
     throw new Error("Customer not found.");
   }
 
-  // Update password
   customer.password = await bcrypt.hash(newPassword, 10);
 
   await customer.save();
+
+  await deleteCache(cacheKey);
 
   await createNotification({
     recipient: customer._id,
     title: "Password Changed",
     message: "Your password has been reset successfully.",
     type: "ACCOUNT",
-  });
-
-  // Delete OTP
-  await deleteOtp({
-    id: forgotPasswordOtp._id,
   });
 
   return {
@@ -548,18 +682,11 @@ export const resetForgotPasswordService = async ({
 //change password
 export const changePasswordService = async (
   userId,
-  { currentPassword, newPassword, confirmPassword },
+  { currentPassword, newPassword },
 ) => {
   // Validate required fields
-  if (!currentPassword || !newPassword || !confirmPassword) {
-    throw new Error(
-      "Current password, new password and confirm password are required.",
-    );
-  }
-
-  // Validate new passwords
-  if (newPassword !== confirmPassword) {
-    throw new Error("New password and confirm password do not match.");
+  if (!currentPassword || !newPassword) {
+    throw new Error("Current password, new password are required.");
   }
 
   validatePassword(newPassword);
@@ -668,145 +795,8 @@ export const deleteAccountService = async (userId, { password, reason }) => {
   };
 };
 
-// REQUEST CHANGE EMAIL OTP
-export const requestChangeEmailOtpService = async (userId, { newEmail }) => {
-  if (!newEmail) {
-    throw new Error("New email is required.");
-  }
-
-  const normalizedEmail = newEmail.trim().toLowerCase();
-
-  // Find customer
-  const customer = await User.findOne({
-    _id: userId,
-    role: "CUSTOMER",
-  });
-
-  if (!customer) {
-    throw new Error("Customer not found.");
-  }
-
-  // Already using this email
-  if (customer.email === normalizedEmail) {
-    throw new Error("This is already your current email.");
-  }
-
-  // Email already belongs to another account
-  const existingUser = await User.findOne({
-    email: normalizedEmail,
-    _id: { $ne: customer._id },
-  });
-
-  if (existingUser) {
-    throw new Error("Email is already in use.");
-  }
-
-  // Create OTP
-  const { otp } = await createOtp({
-    email: customer.email, // current email
-    purpose: "CHANGE_EMAIL",
-    verificationType: "EMAIL",
-    data: {
-      newEmail: normalizedEmail,
-    },
-  });
-
-  // Send OTP to CURRENT email
-  await sendOtpEmail({
-    recipientEmail: customer.email,
-    recipientName: customer.fullName,
-    otp,
-  });
-
-  return {
-    message: "OTP has been sent to your current email.",
-  };
-};
-
-// VERIFY CHANGE EMAIL OTP
-export const verifyChangeEmailOtpService = async (userId, { otp }) => {
-  // Validate input
-  if (!otp) {
-    throw new Error("OTP is required.");
-  }
-
-  // Find customer
-  const customer = await User.findOne({
-    _id: userId,
-    role: "CUSTOMER",
-  });
-
-  if (!customer) {
-    throw new Error("Customer not found.");
-  }
-
-  // Validate OTP
-  const otpRecord = await validateOtp({
-    email: customer.email,
-    otp,
-    purpose: "CHANGE_EMAIL",
-    verificationType: "EMAIL",
-  });
-
-  // Ensure the OTP contains a new email
-  if (!otpRecord.newEmail) {
-    throw new Error("New email address not found.");
-  }
-
-  // Double-check that the email hasn't been taken while OTP was pending
-  const existingUser = await User.findOne({
-    email: otpRecord.newEmail,
-    _id: { $ne: customer._id },
-  });
-
-  if (existingUser) {
-    await deleteOtp({
-      id: otpRecord._id,
-    });
-
-    throw new Error("Email address is already in use.");
-  }
-
-  // Update email
-  customer.email = otpRecord.newEmail;
-  customer.emailVerified = true;
-
-  await customer.save();
-
-  await createNotification({
-    recipient: customer._id,
-    title: "Email Updated",
-    message: "Your email address has been updated successfully.",
-    type: "ACCOUNT",
-  });
-
-  // Remove OTP
-  await deleteOtp({
-    id: otpRecord._id,
-  });
-
-  return {
-    message: "Email address updated successfully.",
-    customer: {
-      id: customer._id,
-      fullName: customer.fullName,
-      email: customer.email,
-      phoneNumber: customer.phoneNumber,
-      emailVerified: customer.emailVerified,
-      phoneVerified: customer.phoneVerified,
-      role: customer.role,
-    },
-  };
-};
-
 // REQUEST CHANGE PHONE OTP
-export const requestChangePhoneOtpService = async (userId, { phoneNumber }) => {
-  if (!phoneNumber) {
-    throw new Error("Phone number is required.");
-  }
-
-  const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
-
+export const requestChangePhoneOtpService = async (userId) => {
   // Find customer
   const customer = await User.findOne({
     _id: userId,
@@ -817,32 +807,18 @@ export const requestChangePhoneOtpService = async (userId, { phoneNumber }) => {
     throw new Error("Customer not found.");
   }
 
-  // Same phone
-  if (customer.phoneNumber === normalizedPhoneNumber) {
-    throw new Error("This is already your current phone number.");
-  }
-
-  // Already used
-  const existingUser = await User.findOne({
-    phoneNumber: normalizedPhoneNumber,
-    _id: { $ne: customer._id },
+  await ensureNoActiveOtp({
+    email: customer.email,
+    purpose: "CHANGE_PHONE",
+    verificationType: "EMAIL",
   });
 
-  if (existingUser) {
-    throw new Error("Phone number is already in use.");
-  }
-
-  // Create OTP
   const { otp } = await createOtp({
     email: customer.email,
     purpose: "CHANGE_PHONE",
     verificationType: "EMAIL",
-    data: {
-      newPhoneNumber: normalizedPhoneNumber,
-    },
   });
 
-  // Send OTP
   await sendOtpEmail({
     recipientEmail: customer.email,
     recipientName: customer.fullName,
@@ -850,7 +826,45 @@ export const requestChangePhoneOtpService = async (userId, { phoneNumber }) => {
   });
 
   return {
-    message: "OTP has been sent to your email to verify your new phone number.",
+    message: "OTP has been sent to your registered email.",
+  };
+};
+
+export const resendChangePhoneOtpService = async (userId) => {
+  const customer = await User.findOne({
+    _id: userId,
+    role: "CUSTOMER",
+  });
+
+  if (!customer) {
+    throw new Error("Customer not found.");
+  }
+
+  const purpose = "CHANGE_PHONE";
+  const verificationType = "EMAIL";
+
+  const resendState = await checkOtpResendAllowed({
+    email: customer.email,
+    purpose,
+    verificationType,
+  });
+
+  const { otp } = await createOtp({
+    email: customer.email,
+    purpose,
+    verificationType,
+  });
+
+  await sendOtpEmail({
+    recipientEmail: customer.email,
+    recipientName: customer.fullName,
+    otp,
+  });
+
+  await recordOtpResend(resendState);
+
+  return {
+    message: "A new OTP has been sent to your registered email.",
   };
 };
 
@@ -860,7 +874,6 @@ export const verifyChangePhoneOtpService = async (userId, { otp }) => {
     throw new Error("OTP is required.");
   }
 
-  // Find customer
   const customer = await User.findOne({
     _id: userId,
     role: "CUSTOMER",
@@ -870,48 +883,96 @@ export const verifyChangePhoneOtpService = async (userId, { otp }) => {
     throw new Error("Customer not found.");
   }
 
-  // Validate OTP
-  const otpRecord = await validateOtp({
+  await validateOtp({
     email: customer.email,
     otp,
     purpose: "CHANGE_PHONE",
     verificationType: "EMAIL",
   });
 
-  if (!otpRecord.newPhoneNumber) {
-    throw new Error("New phone number not found.");
+  await deleteOtp({
+    email: customer.email,
+    purpose: "CHANGE_PHONE",
+    verificationType: "EMAIL",
+  });
+
+  const verificationToken = crypto.randomBytes(32).toString("hex");
+
+  const cacheKey = phoneChangeCacheKeys.verificationToken(verificationToken);
+
+  await setCache(
+    cacheKey,
+    {
+      userId: customer._id.toString(),
+    },
+    10 * 60,
+  );
+
+  return {
+    message: "OTP verified successfully.",
+    verificationToken,
+  };
+};
+
+// CHANGE PHONE NUMBER
+export const changePhoneNumberService = async (
+  userId,
+  { verificationToken, phoneNumber },
+) => {
+  if (!verificationToken || !phoneNumber) {
+    throw new Error("Verification token and phone number are required.");
   }
 
-  // Check if another user already owns the phone number
+  const normalizedPhoneNumber = normalizePhoneNumber(phoneNumber);
+
+  const cacheKey = phoneChangeCacheKeys.verificationToken(verificationToken);
+
+  const tokenData = await getCache(cacheKey);
+
+  if (!tokenData) {
+    throw new Error(
+      "Invalid or expired verification token. Please verify your OTP again.",
+    );
+  }
+
+  if (tokenData.userId !== userId.toString()) {
+    throw new Error("Invalid verification token.");
+  }
+
+  const customer = await User.findOne({
+    _id: userId,
+    role: "CUSTOMER",
+  });
+
+  if (!customer) {
+    throw new Error("Customer not found.");
+  }
+
+  if (customer.phoneNumber === normalizedPhoneNumber) {
+    throw new Error("This is already your current phone number.");
+  }
+
   const existingUser = await User.findOne({
-    phoneNumber: otpRecord.newPhoneNumber,
+    phoneNumber: normalizedPhoneNumber,
     _id: { $ne: customer._id },
   });
 
   if (existingUser) {
-    await deleteOtp({
-      id: otpRecord._id,
-    });
-
     throw new Error("Phone number is already in use.");
   }
 
-  // Update phone number
-  customer.phoneNumber = otpRecord.newPhoneNumber;
+  customer.phoneNumber = normalizedPhoneNumber;
   customer.phoneVerified = true;
 
   await customer.save();
+
+  await deleteCache(cacheKey);
 
   await createNotification({
     recipient: customer._id,
     title: "Phone Number Updated",
     message: "Your phone number has been updated successfully.",
     type: "ACCOUNT",
-  });
-
-  // Delete OTP
-  await deleteOtp({
-    id: otpRecord._id,
   });
 
   return {

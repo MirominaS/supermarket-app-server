@@ -114,7 +114,7 @@ export const adminRefreshToken = async (req, res) => {
 
     try {
       decoded = verifyRefreshToken(refreshToken);
-    } catch (error) {
+    } catch {
       return res.status(401).json({
         success: false,
         message: "Invalid or expired refresh token.",

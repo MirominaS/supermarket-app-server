@@ -1,14 +1,9 @@
 import mongoose from "mongoose";
 import Offer from "../models/offer.model.js";
+import { isCustomerOfferAvailable } from "../utils/customer-offer.helper.js";
 
-export const getCustomerOffersService = async () => {
-  const today = new Date();
-
-  const offers = await Offer.find({
-    isActive: true,
-    startDate: { $lte: today },
-    endDate: { $gte: today },
-  })
+const populateCustomerOffer = (query) =>
+  query
     .populate({
       path: "image",
       match: {
@@ -19,25 +14,26 @@ export const getCustomerOffersService = async () => {
     })
     .populate({
       path: "items.product",
-      match: {
-        isActive: true,
-      },
-      populate: {
-        path: "image",
-      },
+      match: { isActive: true },
+      populate: { path: "image" },
     })
     .populate({
       path: "items.variant",
-      match: {
-        isActive: true,
-        stock: { $gt: 0 },
-      },
-    })
-    .sort({
-      createdAt: -1,
+      match: { isActive: true, stock: { $gt: 0 } },
     });
 
-  return offers;
+export const getCustomerOffersService = async () => {
+  const today = new Date();
+
+  const offers = await populateCustomerOffer(
+    Offer.find({
+      isActive: true,
+      startDate: { $lte: today },
+      endDate: { $gte: today },
+    }).sort({ createdAt: -1 })
+  );
+
+  return offers.filter(isCustomerOfferAvailable);
 };
 
 export const getCustomerOfferByIdService = async (offerId) => {
@@ -47,39 +43,17 @@ export const getCustomerOfferByIdService = async (offerId) => {
 
   const today = new Date();
 
-  const offer = await Offer.findOne({
-    _id: offerId,
-    isActive: true,
-    startDate: { $lte: today },
-    endDate: { $gte: today },
-  })
-    .populate({
-      path: "image",
-      match: {
-        folder: "offer-images",
-        type: "image",
-        visibility: "public",
-      },
+  const offer = await populateCustomerOffer(
+    Offer.findOne({
+      _id: offerId,
+      isActive: true,
+      startDate: { $lte: today },
+      endDate: { $gte: today },
     })
-    .populate({
-      path: "items.product",
-      match: {
-        isActive: true,
-      },
-      populate: {
-        path: "image",
-      },
-    })
-    .populate({
-      path: "items.variant",
-      match: {
-        isActive: true,
-        stock: { $gt: 0 },
-      },
-    });
+  );
 
-  if (!offer) {
-    throw new Error("Offer not found.");
+  if (!offer || !isCustomerOfferAvailable(offer)) {
+    throw new Error("Offer not found or no longer available.");
   }
 
   return offer;
