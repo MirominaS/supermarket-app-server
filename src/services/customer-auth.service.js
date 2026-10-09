@@ -20,7 +20,7 @@ import {
 
 import { otpCacheKeys } from "../utils/otp-cache-key.js";
 
-import { getCache, setCache } from "./cache.service.js";
+import { getCache, setCache, deleteCache } from "./cache.service.js";
 import { normalizePhoneNumber } from "../utils/phone.helper.js";
 import { OAuth2Client } from "google-auth-library";
 import { createNotification } from "./notification.service.js";
