@@ -1,18 +1,21 @@
 import {
   requestCustomerRegistrationOtp,
+  resendCustomerRegistrationOtp,
   verifyCustomerRegistrationOtp,
   loginCustomerService,
   refreshCustomerAccessTokenService,
   getCustomerProfileService,
   updateCustomerProfileService,
   requestForgotPasswordOtpService,
+  resendForgotPasswordOtpService,
+  verifyForgotPasswordOtpService,
   resetForgotPasswordService,
   changePasswordService,
   deleteAccountService,
-  requestChangeEmailOtpService,
-  verifyChangeEmailOtpService,
   requestChangePhoneOtpService,
+  resendChangePhoneOtpService,
   verifyChangePhoneOtpService,
+  changePhoneNumberService,
   googleLoginService,
 } from "../services/customer-auth.service.js";
 
@@ -22,21 +25,14 @@ import RefreshToken from "../models/refresh-token.model.js";
 // Request Customer Registration OTP
 export const requestRegisterOtp = async (req, res) => {
   try {
-    const {
-      fullName,
-      email,
-      phoneNumber,
-      password,
-      confirmPassword,
-      verificationType,
-    } = req.body;
+    const { fullName, email, phoneNumber, password, verificationType } =
+      req.body;
 
     const result = await requestCustomerRegistrationOtp({
       fullName,
       email,
       phoneNumber,
       password,
-      confirmPassword,
       verificationType,
     });
 
@@ -54,6 +50,15 @@ export const requestRegisterOtp = async (req, res) => {
       success: false,
       message: error.message,
     });
+  }
+};
+
+export const resendRegistrationOtp = async (req, res, next) => {
+  try {
+    const result = await resendCustomerRegistrationOtp(req.body);
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
   }
 };
 
@@ -226,6 +231,36 @@ export const requestForgotPasswordOtp = async (req, res) => {
     });
   }
 };
+
+export const resendForgotPasswordOtp = async (req, res, next) => {
+  try {
+    const result = await resendForgotPasswordOtpService(req.body);
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+//verify forget password OTP
+export const verifyForgotPasswordOtp = async (req, res) => {
+  try {
+    const result = await verifyForgotPasswordOtpService(req.body);
+
+    return res.status(200).json({
+      success: true,
+      message: result.message,
+      resetToken: result.resetToken,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 //reset Forgot password
 export const resetForgotPassword = async (req, res) => {
   try {
@@ -278,48 +313,10 @@ export const deleteAccount = async (req, res) => {
   }
 };
 
-// REQUEST CHANGE EMAIL OTP
-export const requestChangeEmailOtp = async (req, res) => {
-  try {
-    const result = await requestChangeEmailOtpService(req.user._id, req.body);
-
-    return res.status(200).json({
-      success: true,
-      ...result,
-    });
-  } catch (error) {
-    console.error("Request change email OTP error:", error);
-
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// VERIFY CHANGE EMAIL OTP
-export const verifyChangeEmailOtp = async (req, res) => {
-  try {
-    const result = await verifyChangeEmailOtpService(req.user._id, req.body);
-
-    return res.status(200).json({
-      success: true,
-      ...result,
-    });
-  } catch (error) {
-    console.error("Verify change email OTP error:", error);
-
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
 // REQUEST CHANGE PHONE OTP
 export const requestChangePhoneOtp = async (req, res) => {
   try {
-    const result = await requestChangePhoneOtpService(req.user._id, req.body);
+    const result = await requestChangePhoneOtpService(req.user._id);
 
     return res.status(200).json({
       success: true,
@@ -335,6 +332,15 @@ export const requestChangePhoneOtp = async (req, res) => {
   }
 };
 
+export const resendChangePhoneOtp = async (req, res, next) => {
+  try {
+    const result = await resendChangePhoneOtpService(req.user._id);
+    return res.status(200).json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 // VERIFY CHANGE PHONE OTP
 export const verifyChangePhoneOtp = async (req, res) => {
   try {
@@ -346,6 +352,25 @@ export const verifyChangePhoneOtp = async (req, res) => {
     });
   } catch (error) {
     console.error("Verify change phone OTP error:", error);
+
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
+// CHANGE PHONE NUMBER
+export const changePhoneNumber = async (req, res) => {
+  try {
+    const result = await changePhoneNumberService(req.user._id, req.body);
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    console.error("Change phone number error:", error);
 
     return res.status(400).json({
       success: false,

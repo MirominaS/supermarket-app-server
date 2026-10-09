@@ -2,6 +2,7 @@ import express from "express";
 
 import {
   requestRegisterOtp,
+  resendRegistrationOtp,
   verifyRegisterOtp,
   loginCustomer,
   refreshCustomerAccessToken,
@@ -9,14 +10,16 @@ import {
   getCustomerProfile,
   updateCustomerProfile,
   requestForgotPasswordOtp,
+  resendForgotPasswordOtp,
+  verifyForgotPasswordOtp,
   resetForgotPassword,
   changePassword,
   deleteAccount,
-  requestChangeEmailOtp,
-  verifyChangeEmailOtp,
   requestChangePhoneOtp,
+  resendChangePhoneOtp,
   verifyChangePhoneOtp,
-  googleLogin, 
+  changePhoneNumber,
+  googleLogin,
 } from "../controllers/customer-auth.controller.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { authorizeRoles } from "../middleware/role.middleware.js";
@@ -24,6 +27,7 @@ import { authorizeRoles } from "../middleware/role.middleware.js";
 const router = express.Router();
 
 router.post("/request-otp", requestRegisterOtp);
+router.post("/register/resend-otp", resendRegistrationOtp);
 router.post("/verify-otp", verifyRegisterOtp);
 
 router.post("/login", loginCustomer);
@@ -31,7 +35,7 @@ router.post(
   "/logout",
   authenticate,
   authorizeRoles("CUSTOMER"),
-  logoutCustomer, 
+  logoutCustomer,
 );
 
 router.post("/refresh", refreshCustomerAccessToken);
@@ -53,6 +57,8 @@ router.put(
 );
 
 router.post("/forgot-password/request-otp", requestForgotPasswordOtp);
+router.post("/forgot-password/resend-otp", resendForgotPasswordOtp);
+router.post("/forgot-password/verify-otp", verifyForgotPasswordOtp);
 router.post("/forgot-password/reset", resetForgotPassword);
 
 router.post(
@@ -70,20 +76,6 @@ router.delete(
 );
 
 router.post(
-  "/change-email/request",
-  authenticate,
-  authorizeRoles("CUSTOMER"),
-  requestChangeEmailOtp,
-); 
-
-router.post(
-  "/change-email/verify",
-  authenticate,
-  authorizeRoles("CUSTOMER"),
-  verifyChangeEmailOtp,
-);
-
-router.post(
   "/change-phone/request",
   authenticate,
   authorizeRoles("CUSTOMER"),
@@ -91,10 +83,24 @@ router.post(
 );
 
 router.post(
+  "/change-phone/resend-otp",
+  authenticate,
+  authorizeRoles("CUSTOMER"),
+  resendChangePhoneOtp
+);
+
+router.post(
   "/change-phone/verify",
   authenticate,
   authorizeRoles("CUSTOMER"),
   verifyChangePhoneOtp,
+);
+
+router.post(
+  "/change-phone/confirm",
+  authenticate,
+  authorizeRoles("CUSTOMER"),
+  changePhoneNumber,
 );
 
 export default router;
