@@ -20,22 +20,13 @@ export const readExcelSheets = (buffer) => {
   return result;
 };
 
-export const createExcelBuffer = ({
-  sheets,
-  workbookName = "export",
-}) => {
+export const createExcelBuffer = ({ sheets }) => {
   const workbook = XLSX.utils.book_new();
 
   for (const sheet of sheets) {
-    const worksheet = XLSX.utils.json_to_sheet(
-      sheet.data,
-    );
+    const worksheet = XLSX.utils.json_to_sheet(sheet.data);
 
-    XLSX.utils.book_append_sheet(
-      workbook,
-      worksheet,
-      sheet.name,
-    );
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name);
   }
 
   return XLSX.write(workbook, {
