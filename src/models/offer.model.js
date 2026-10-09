@@ -11,7 +11,7 @@ const offerItemSchema = new mongoose.Schema(
     variant: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ProductVariant",
-      required: true,
+      default: null,
     },
 
     price: {
