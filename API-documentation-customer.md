@@ -57,3 +57,13 @@
 | Get all wish-listed products | `GET` | `http://localhost:5007/api/customer/wishlist` | - |
 | Check whether a product is wish-listed | `GET` | `http://localhost:5007/api/customer/wishlist/:productId` | - |
 | Remove product from wish-list | `DELETE` | `http://localhost:5007/api/customer/wishlist/:productId` | - |
+
+
+### Customer Address
+| Name | Method | API | Body |
+| --- | --- | --- | --- |
+|Create Customer Address | `POST` | `http://localhost:5007/api/customer/addresses` | `{"label":"Home","houseNumber":"25A","street":"Main Street","landmark":"Near the bus stand","city":"Jaffna","country":"Sri Lanka","specialInstruction":"Call before delivery"}` |
+| Get All Customer Addresses | `GET` | `http://localhost:5007/api/customer/addresses` | - |
+| Get Customer Address By ID | `GET` |  `http://localhost:5007/api/customer/addresses/:id` | -|
+| Update Customer Address | `PUT` |  `http://localhost:5007/api/customer/addresses/:id` | `{"label":"Office","houseNumber":"10","street":"Hospital Road","landmark":"Near the hospital","city":"Jaffna","country":"Sri Lanka","specialInstruction":"Deliver to reception"}`|
+| Delete Customer Address | `DELETE` |  `http://localhost:5007/api/customer/addresses/:id` | -|

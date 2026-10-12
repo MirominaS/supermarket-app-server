@@ -10,25 +10,19 @@ export const createCustomerAddressService = async (
     street,
     landmark,
     city,
-    postalCode,
-    country,
     specialInstruction,
-    latitude,
-    longitude,
     isDefault,
   },
 ) => {
   // Validate required fields
   if (
-    !label ||
-    !houseNumber ||
-    !street ||
-    !city ||
-    latitude === undefined ||
-    longitude === undefined
+     !label?.trim() ||
+    !houseNumber?.trim() ||
+    !street?.trim() ||
+    !city?.trim()
   ) {
     throw new Error(
-      "Label, house number, street, city, latitude and longitude are required.",
+      "Label, house number, street, city are required.",
     );
   }
 
@@ -42,49 +36,14 @@ export const createCustomerAddressService = async (
     throw new Error("Customer not found.");
   }
 
-  // Remove previous default address
-  if (isDefault) {
-    await CustomerAddress.updateMany(
-      {
-        customer: userId,
-      },
-      {
-        isDefault: false,
-      },
-    );
-  }
-
-  // If this is the customer's first address,
-  // automatically make it default
-  const addressCount = await CustomerAddress.countDocuments({
-    customer: userId,
-  });
-
   const address = await CustomerAddress.create({
     customer: userId,
-
     label: label.trim(),
-
     houseNumber: houseNumber.trim(),
-
     street: street.trim(),
-
     landmark: landmark?.trim() || "",
-
     city: city.trim(),
-
-    postalCode: postalCode?.trim() || "",
-
-    country: country?.trim() || "Sri Lanka",
-
     specialInstruction: specialInstruction?.trim() || "",
-
-    location: {
-      type: "Point",
-      coordinates: [Number(longitude), Number(latitude)],
-    },
-
-    isDefault: addressCount === 0 ? true : Boolean(isDefault),
   });
 
   return address;
@@ -110,7 +69,6 @@ export const getCustomerAddressesService = async (userId) => {
   const addresses = await CustomerAddress.find({
     customer: userId,
   }).sort({
-    isDefault: -1,
     createdAt: -1,
   });
 
@@ -155,12 +113,7 @@ export const updateCustomerAddressService = async (
     street,
     landmark,
     city,
-    postalCode,
-    country,
     specialInstruction,
-    latitude,
-    longitude,
-    isDefault,
   },
 ) => {
   // Validate address ID
@@ -237,119 +190,16 @@ export const updateCustomerAddressService = async (
     address.city = value;
   }
 
-  // Update postal code
-  if (postalCode !== undefined) {
-    address.postalCode = postalCode.trim();
-  }
-
-  // Update country
-  if (country !== undefined) {
-    const value = country.trim();
-
-    if (!value) {
-      throw new Error("Country is required.");
-    }
-
-    address.country = value;
-  }
-
   // Update special instruction
   if (specialInstruction !== undefined) {
     address.specialInstruction = specialInstruction.trim();
   }
 
-  // Update location
-  if (latitude !== undefined && longitude !== undefined) {
-    const lat = Number(latitude);
-    const lng = Number(longitude);
-
-    if (isNaN(lat) || lat < -90 || lat > 90) {
-      throw new Error("Invalid latitude.");
-    }
-
-    if (isNaN(lng) || lng < -180 || lng > 180) {
-      throw new Error("Invalid longitude.");
-    }
-
-    address.location = {
-      type: "Point",
-      coordinates: [lng, lat],
-    };
-  }
-
-  // Update default address
-  if (isDefault === true && !address.isDefault) {
-    await CustomerAddress.updateMany(
-      {
-        customer: userId,
-      },
-      {
-        isDefault: false,
-      },
-    );
-
-    address.isDefault = true;
-  }
 
   await address.save();
 
   return address;
 };
-
-export const setDefaultCustomerAddressService = async (userId, addressId) => {
-  // Validate address ID
-  if (!mongoose.Types.ObjectId.isValid(addressId)) {
-    throw new Error("Invalid address ID.");
-  }
-
-  // Find customer
-  const customer = await User.findOne({
-    _id: userId,
-    role: "CUSTOMER",
-  });
-
-  if (!customer) {
-    throw new Error("Customer not found.");
-  }
-
-  // Find address
-  const address = await CustomerAddress.findOne({
-    _id: addressId,
-    customer: userId,
-  });
-
-  if (!address) {
-    throw new Error("Address not found.");
-  }
-
-  // Already default
-  if (address.isDefault) {
-    return {
-      message: "This address is already the default address.",
-    };
-  }
-
-  // Remove existing default address
-  await CustomerAddress.updateMany(
-    {
-      customer: userId,
-    },
-    {
-      isDefault: false,
-    },
-  );
-
-  // Set selected address as default
-  address.isDefault = true;
-
-  await address.save();
-
-  return {
-    message: "Default address updated successfully.",
-    address,
-  };
-};
-
 
 export const deleteCustomerAddressService = async (
   userId,
@@ -380,28 +230,11 @@ export const deleteCustomerAddressService = async (
     throw new Error("Address not found.");
   }
 
-  const wasDefault = address.isDefault;
-
+ 
   // Delete address
   await CustomerAddress.deleteOne({
     _id: address._id,
   });
-
-  // If deleted address was default,
-  // assign another address as default
-  if (wasDefault) {
-    const nextDefaultAddress = await CustomerAddress.findOne({
-      customer: userId,
-    }).sort({
-      createdAt: -1,
-    });
-
-    if (nextDefaultAddress) {
-      nextDefaultAddress.isDefault = true;
-
-      await nextDefaultAddress.save();
-    }
-  }
 
   return {
     message: "Address deleted successfully.",

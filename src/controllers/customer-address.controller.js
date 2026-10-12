@@ -3,7 +3,6 @@ import {
   getCustomerAddressesService,
   getCustomerAddressByIdService,
   updateCustomerAddressService,
-  setDefaultCustomerAddressService,
   deleteCustomerAddressService,
 } from "../services/customer-address.service.js";
 
@@ -86,29 +85,6 @@ export const updateCustomerAddress = async (req, res) => {
       success: true,
       message: "Address updated successfully.",
       address,
-    });
-  } catch (error) {
-    console.error(error);
-
-    res.status(400).json({
-      success: false,
-      message: error.message,
-    });
-  }
-};
-
-// SET DEFAULT ADDRESS
-export const setDefaultCustomerAddress = async (req, res) => {
-  try {
-    const result = await setDefaultCustomerAddressService(
-      req.user._id,
-      req.params.id,
-    );
-
-    res.status(200).json({
-      success: true,
-      message: result.message,
-      address: result.address,
     });
   } catch (error) {
     console.error(error);
