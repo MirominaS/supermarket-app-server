@@ -5,7 +5,6 @@ import {
   getCustomerAddresses,
   getCustomerAddressById,
   updateCustomerAddress,
-  setDefaultCustomerAddress,
   deleteCustomerAddress,
 } from "../controllers/customer-address.controller.js";
 
@@ -23,8 +22,6 @@ router.get("/", getCustomerAddresses);
 router.get("/:id", getCustomerAddressById);
 
 router.put("/:id", updateCustomerAddress);
-
-router.patch("/:id/default", setDefaultCustomerAddress);
 
 router.delete("/:id", deleteCustomerAddress);
 
