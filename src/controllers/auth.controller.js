@@ -229,3 +229,84 @@ export const adminLogout = async (req, res) => {
     });
   }
 };
+
+
+export const staffLogin = async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (
+      typeof username !== "string" ||
+      !username.trim() ||
+      typeof password !== "string" ||
+      !password
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Username and password are required.",
+      });
+    }
+
+    const user = await User.findOne({
+      username: username.trim().toLowerCase(),
+      role: { $in: ["MANAGER", "CASHIER"] },
+    }).select("+password");
+
+    if (!user || !user.password) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid username or password.",
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is inactive.",
+      });
+    }
+
+    const isPasswordValid = await bcrypt.compare(
+      password,
+      user.password
+    );
+
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid username or password.",
+      });
+    }
+
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    await RefreshToken.create({
+      user: user._id,
+      tokenHash: hashToken(refreshToken),
+      expiresAt: new Date(
+        Date.now() + 7 * 24 * 60 * 60 * 1000
+      ),
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Staff login successful.",
+      accessToken,
+      refreshToken,
+      user: {
+        id: user._id,
+        username: user.username,
+        managerName: user.managerName,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    console.error("Staff login error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Something went wrong.",
+    });
+  }
+};
