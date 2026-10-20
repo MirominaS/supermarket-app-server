@@ -11,7 +11,6 @@ export const createCustomerAddressService = async (
     landmark,
     city,
     specialInstruction,
-    isDefault,
   },
 ) => {
   // Validate required fields
