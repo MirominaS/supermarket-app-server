@@ -4,6 +4,7 @@ import {
   createCategory,
   getCategories,
   getCategoryById,
+  getCategoryTree,
   updateCategory,
   deleteCategory,
   bulkImportCategories,
@@ -30,6 +31,13 @@ router.post("/", createCategory);
 router.get("/", getCategories);
 
 router.get("/:id", getCategoryById);
+
+router.get(
+  "/tree",
+  authenticate,
+  authorizeRoles("ADMIN", "MANAGER"),
+  getCategoryTree,
+);
 
 router.put("/:id", updateCategory);
 

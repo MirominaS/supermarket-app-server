@@ -1,8 +1,9 @@
 import Category from "../models/category.model.js";
 import Product from "../models/product.model.js";
 import mongoose from "mongoose";
-import { getCache, setCache } from "./cache.service.js";
+import { getCache, setCache, deleteCache } from "./cache.service.js";
 import { categoryCacheKeys } from "../utils/category-cache-key.js";
+import { generateUniqueSlug } from "../utils/slug.util.js";
 
 // Helper functions
 const isEmptyValue = (value) => {
@@ -60,16 +61,97 @@ const isCompletelyEmptyRow = (row) => {
   return !Object.values(row).some((value) => !isEmptyValue(value));
 };
 
+const invalidateCategoryCache = async ({ id, oldSlug, newSlug } = {}) => {
+  const keys = [categoryCacheKeys.all];
+
+  if (id) {
+    keys.push(categoryCacheKeys.byId(id));
+  }
+
+  if (oldSlug) {
+    keys.push(categoryCacheKeys.bySlug(oldSlug));
+  }
+
+  if (newSlug) {
+    keys.push(categoryCacheKeys.bySlug(newSlug));
+  }
+
+  await Promise.all(keys.map((key) => deleteCache(key)));
+};
+
+const normalizeParentCategory = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const id = String(value).trim();
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new Error("Invalid parent category ID.");
+  }
+
+  return id;
+};
+
+const validateParentCategory = async (parentCategoryId, currentId = null) => {
+  if (!parentCategoryId) {
+    return null;
+  }
+
+  if (currentId && String(parentCategoryId) === String(currentId)) {
+    throw new Error("A category cannot be its own parent.");
+  }
+
+  const parent = await Category.findById(parentCategoryId);
+
+  if (!parent) {
+    throw new Error("Parent category not found.");
+  }
+
+  if (parent.parentCategory) {
+    throw new Error(
+      "A subcategory cannot be used as a parent. Select a main category.",
+    );
+  }
+
+  return parent._id;
+};
+
 export const createCategoryService = async (categoryData) => {
-  const existingCategory = await Category.findOne({
-    name: categoryData.name,
+  const name = String(categoryData.name || "").trim();
+
+  if (!name) {
+    throw new Error("Category name is required.");
+  }
+
+  const parentCategoryId = normalizeParentCategory(categoryData.parentCategory);
+
+  const parentCategory = await validateParentCategory(parentCategoryId);
+
+  const existingCategory = await Category.findOne({ name }).collation({
+    locale: "en",
+    strength: 2,
   });
 
   if (existingCategory) {
     throw new Error("Category already exists.");
   }
 
-  const category = await Category.create(categoryData);
+  const slug = await generateUniqueSlug(Category, name);
+
+  const category = await Category.create({
+    name,
+    slug,
+    description: categoryData.description,
+    image: categoryData.image,
+    isActive: categoryData.isActive ?? true,
+    parentCategory,
+  });
+
+  await invalidateCategoryCache({
+    id: category._id.toString(),
+    newSlug: category.slug,
+  });
 
   return category;
 };
@@ -120,56 +202,145 @@ export const getCategoryByIdService = async (categoryId) => {
   return category;
 };
 
+
+export const getCategoryTreeService = async () => {
+  const mainCategories = await Category.find({
+    parentCategory: null,
+  })
+    .sort({ name: 1 })
+    .lean();
+
+  const subCategories = await Category.find({
+    parentCategory: { $ne: null },
+  })
+    .sort({ name: 1 })
+    .lean();
+
+  const subCategoriesByParent = new Map();
+
+  for (const subCategory of subCategories) {
+    const parentId = String(subCategory.parentCategory);
+
+    if (!subCategoriesByParent.has(parentId)) {
+      subCategoriesByParent.set(parentId, []);
+    }
+
+    subCategoriesByParent.get(parentId).push(subCategory);
+  }
+
+  return mainCategories.map((category) => ({
+    ...category,
+    subCategories:
+      subCategoriesByParent.get(String(category._id)) || [],
+  }));
+};
+
 export const updateCategoryService = async (categoryId, updateData) => {
+  const oldSlug = category.slug;
   const category = await Category.findById(categoryId);
 
   if (!category) {
     throw new Error("Category not found.");
   }
 
-  if (updateData.name) {
+  if (updateData.name !== undefined) {
+    const name = String(updateData.name).trim();
+
+    if (!name) {
+      throw new Error("Category name is required.");
+    }
+
     const existingCategory = await Category.findOne({
-      name: updateData.name,
+      name,
       _id: { $ne: categoryId },
+    }).collation({
+      locale: "en",
+      strength: 2,
     });
 
     if (existingCategory) {
       throw new Error("Category already exists.");
     }
+
+    category.name = name;
+    category.slug = await generateUniqueSlug(Category, name, category._id);
   }
 
-  Object.assign(category, updateData);
+  if (updateData.description !== undefined) {
+    category.description = updateData.description;
+  }
+
+  if (updateData.image !== undefined) {
+    category.image = updateData.image;
+  }
+
+  if (typeof updateData.isActive === "boolean") {
+    category.isActive = updateData.isActive;
+  }
+
+  if (updateData.parentCategory !== undefined) {
+    const parentCategoryId = normalizeParentCategory(updateData.parentCategory);
+
+    category.parentCategory = await validateParentCategory(
+      parentCategoryId,
+      category._id,
+    );
+  }
 
   await category.save();
+
+  await invalidateCategoryCache({
+    id: category._id.toString(),
+    oldSlug,
+    newSlug: category.slug,
+  });
 
   return category;
 };
 
 export const deleteCategoryService = async (categoryId) => {
+  if (!mongoose.Types.ObjectId.isValid(categoryId)) {
+    throw new Error("Invalid category ID.");
+  }
+
   const category = await Category.findById(categoryId);
 
   if (!category) {
     throw new Error("Category not found.");
   }
 
-  // Check whether products are using this category
+  const subCategoryCount = await Category.countDocuments({
+    parentCategory: category._id,
+  });
+
+  if (subCategoryCount > 0) {
+    throw new Error(
+      `Cannot delete this category because it has ${subCategoryCount} subcategory/subcategories. Delete or move them first.`,
+    );
+  }
+
+  // Check existing product references.
   const productCount = await Product.countDocuments({
-    category: categoryId,
+    $or: [{ category: category._id }, { subCategory: category._id }],
   });
 
   if (productCount > 0) {
     throw new Error(
-      `Cannot delete this category because ${productCount} product${
-        productCount > 1 ? "s are" : " is"
-      } assigned to it.`,
+      `Cannot delete this category because ${productCount} product(s) use it.`,
     );
   }
 
+  const oldSlug = category.slug;
+  const id = category._id.toString();
+
   await category.deleteOne();
 
-  return {
-    message: "Category deleted successfully.",
-  };
+  await invalidateCategoryCache({
+    id,
+    oldSlug,
+  });
+
+  return category;
 };
 
 // Categories bulk import
@@ -363,18 +534,41 @@ export const bulkImportCategoriesService = async (sheets) => {
 
     await session.withTransaction(async () => {
       // Prepare categories
-      const categoriesToInsert = validatedCategories.map((category) => ({
-        name: category.name,
-        description: category.description,
-        image: category.image,
-        isActive: category.isActive,
-      }));
+
+      // Prepare categories with unique slugs
+      const categoriesToInsert = [];
+      const generatedSlugs = new Set();
+
+      for (const category of validatedCategories) {
+        let slug = await generateUniqueSlug(Category, category.name);
+
+        // Also prevent duplicate slugs within this Excel import.
+        const baseSlug = slug;
+        let counter = 2;
+
+        while (generatedSlugs.has(slug)) {
+          slug = `${baseSlug}-${counter}`;
+          counter++;
+        }
+
+        generatedSlugs.add(slug);
+
+        categoriesToInsert.push({
+          name: category.name,
+          slug,
+          description: category.description,
+          image: category.image,
+          isActive: category.isActive,
+        });
+      }
 
       createdCategories = await Category.insertMany(categoriesToInsert, {
         session,
         ordered: true,
       });
     });
+
+    await deleteCache(categoryCacheKeys.all);
 
     return {
       totalRows: validCategoryRows.length,
@@ -383,11 +577,11 @@ export const bulkImportCategoriesService = async (sheets) => {
       importedCategories: createdCategories.map((category) => ({
         id: category._id,
         name: category.name,
+        slug: category.slug,
         description: category.description,
         image: category.image,
         isActive: category.isActive,
       })),
-
       errors: [],
     };
   } finally {

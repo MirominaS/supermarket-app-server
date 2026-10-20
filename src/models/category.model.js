@@ -9,6 +9,22 @@ const categorySchema = new mongoose.Schema(
       trim: true,
     },
 
+    slug: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      unique: true,
+      sparse: true,
+    },
+
+      parentCategory: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      default: null,
+      index: true,
+    },
+    
+
     description: {
       type: String,
       trim: true,
@@ -27,7 +43,7 @@ const categorySchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 const Category = mongoose.model("Category", categorySchema);
