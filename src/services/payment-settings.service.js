@@ -140,3 +140,32 @@ export const getDecryptedSecretKeyService = async (
 
   return decrypt(settings.secretKey);
 };
+
+
+export const getDecryptedWebhookSecretService = async (
+  provider = DEFAULT_PROVIDER,
+) => {
+  const normalizedProvider = String(provider).trim().toUpperCase();
+
+  if (!SUPPORTED_PROVIDERS.includes(normalizedProvider)) {
+    throw new Error(`Unsupported payment provider: ${normalizedProvider}`);
+  }
+
+  const settings = await PaymentSettings.findOne({
+    provider: normalizedProvider,
+  });
+
+  if (!settings) {
+    throw new Error(
+      `Payment settings for ${normalizedProvider} are not configured.`,
+    );
+  }
+
+  if (!settings.webhookSecret) {
+    throw new Error(
+      `Webhook secret for ${normalizedProvider} is not configured.`,
+    );
+  }
+
+  return decrypt(settings.webhookSecret);
+};
