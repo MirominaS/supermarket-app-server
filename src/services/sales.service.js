@@ -3,11 +3,26 @@ import mongoose from "mongoose";
 import { buildDateFilter } from "../utils/date-filter.js";
 import { createExcelBuffer } from "../utils/excel.util.js";
 import { createInvoiceFromSale } from "./invoice.service.js";
+import Counter from "../models/counter.model.js";
 
-const generateSaleNumber = async () => {
-  const count = await Sale.countDocuments();
+const generateSaleNumber = async (session = null) => {
+  const options = {
+    new: true,
+    upsert: true,
+    setDefaultsOnInsert: true,
+  };
 
-  return `SAL-${String(count + 1).padStart(5, "0")}`;
+  if (session) {
+    options.session = session;
+  }
+
+  const counter = await Counter.findOneAndUpdate(
+    { _id: "saleNumber" },
+    { $inc: { seq: 1 } },
+    options,
+  );
+
+  return `SAL-${String(counter.seq).padStart(5, "0")}`;
 };
 
 export const createSaleFromOrder = async (order, session = null) => {
@@ -26,7 +41,7 @@ export const createSaleFromOrder = async (order, session = null) => {
   let sale = await saleQuery;
 
   if (!sale) {
-    const saleNumber = await generateSaleNumber();
+    const saleNumber = await generateSaleNumber(session);
 
     const saleData = {
       saleNumber,
