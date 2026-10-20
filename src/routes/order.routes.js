@@ -5,6 +5,7 @@ import {
   getOrderById,
   updateOrderStatus,
   cancelOrder,
+  deleteOrder,
   exportOrders,
 } from "../controllers/order.controller.js";
 
@@ -13,19 +14,36 @@ import { authorizeRoles } from "../middleware/role.middleware.js";
 
 const router = express.Router();
 
-router.get("/export", authenticate, authorizeRoles("ADMIN"), exportOrders);
+router.get(
+  "/export",
+  authenticate,
+  authorizeRoles("ADMIN", "MANAGER"),
+  exportOrders,
+);
 
-router.get("/", authenticate, authorizeRoles("ADMIN"), getOrders);
+router.get("/", authenticate, authorizeRoles("ADMIN", "MANAGER"), getOrders);
 
-router.get("/:id", authenticate, authorizeRoles("ADMIN"), getOrderById);
+router.get(
+  "/:id",
+  authenticate,
+  authorizeRoles("ADMIN", "MANAGER"),
+  getOrderById,
+);
 
 router.patch(
   "/:id/status",
   authenticate,
-  authorizeRoles("ADMIN"),
+  authorizeRoles("ADMIN", "MANAGER"),
   updateOrderStatus,
 );
 
-router.patch("/:id/cancel", authenticate, authorizeRoles("ADMIN"), cancelOrder);
+router.patch(
+  "/:id/cancel",
+  authenticate,
+  authorizeRoles("ADMIN", "MANAGER"),
+  cancelOrder,
+);
+
+router.delete("/:id", authenticate, authorizeRoles("ADMIN"), deleteOrder);
 
 export default router;

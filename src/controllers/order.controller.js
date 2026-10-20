@@ -3,6 +3,7 @@ import {
   getOrderByIdService,
   updateOrderStatusService,
   cancelOrderService,
+  deleteOrderService,
   exportOrdersService,
 } from "../services/order.service.js";
 import { createSaleFromOrder } from "../services/sales.service.js";
@@ -100,10 +101,31 @@ export const cancelOrder = async (req, res) => {
   }
 };
 
+export const deleteOrder = async (req, res) => {
+  try {
+    const order = await deleteOrderService(req.params.id, req.user._id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Order deleted successfully.",
+      order,
+    });
+  } catch (error) {
+    console.error("Delete order error:", error);
+
+    const statusCode = error.message === "Order not found." ? 404 : 400;
+
+    return res.status(statusCode).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 export const exportOrders = async (req, res) => {
   try {
     const { status } = req.query;
-    
+
     const rows = await exportOrdersService({
       status,
     });
@@ -119,7 +141,7 @@ export const exportOrders = async (req, res) => {
     });
 
     // Generate filename
-       const date = new Date().toISOString().slice(0, 10);
+    const date = new Date().toISOString().slice(0, 10);
 
     const filename = status
       ? `orders-${status.toLowerCase()}-${date}.xlsx`
