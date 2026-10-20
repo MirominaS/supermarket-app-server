@@ -1,31 +1,49 @@
+
 import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema(
   {
     fullName: {
       type: String,
-      required: true,
       trim: true,
+      required: function () {
+        return ["ADMIN", "CUSTOMER"].includes(this.role);
+      },
     },
 
     email: {
       type: String,
-      required: true,
-      unique: true,
       lowercase: true,
       trim: true,
+      default: undefined,
+      required: function () {
+        return ["ADMIN", "CUSTOMER"].includes(this.role);
+      },
     },
 
     phoneNumber: {
       type: String,
-      default: null,
-      unique: true,
       trim: true,
+      default: undefined,
+    },
+
+    username: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: undefined,
+    },
+
+    managerName: {
+      type: String,
+      trim: true,
+      default: null,
     },
 
     password: {
       type: String,
       default: null,
+      select: false,
     },
 
     googleId: {
@@ -56,7 +74,6 @@ const userSchema = new mongoose.Schema(
       default: "LOCAL",
     },
 
-    // Customer verification status
     emailVerified: {
       type: Boolean,
       default: false,
@@ -69,7 +86,7 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["ADMIN", "CUSTOMER"],
+      enum: ["ADMIN", "MANAGER", "CASHIER", "CUSTOMER"],
       default: "CUSTOMER",
     },
 
@@ -80,7 +97,32 @@ const userSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  },
+  }
+);
+
+// Only enforce uniqueness when a value is provided.
+userSchema.index(
+  { email: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { email: { $type: "string" } },
+  }
+);
+
+userSchema.index(
+  { phoneNumber: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { phoneNumber: { $type: "string" } },
+  }
+);
+
+userSchema.index(
+  { username: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { username: { $type: "string" } },
+  }
 );
 
 const User = mongoose.model("User", userSchema);
