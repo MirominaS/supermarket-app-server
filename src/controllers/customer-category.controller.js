@@ -1,6 +1,7 @@
 import {
   getCustomerCategoriesService,
   getCustomerCategoryByIdService,
+  getCustomerCategoryBySlugService,
   searchCustomerCategoriesService,
 } from "../services/customer-category.service.js";
 
@@ -40,6 +41,26 @@ export const getCustomerCategoryById = async (req, res) => {
     });
   }
 };
+
+
+export const getCustomerCategoryBySlug = async (req, res) => {
+  try {
+    const category = await getCustomerCategoryBySlugService(
+      req.params.slug,
+    );
+
+    return res.status(200).json({
+      success: true,
+      category,
+    });
+  } catch (error) {
+    return res.status(404).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
+
 
 export const searchCustomerCategories = async (req, res) => {
   try {
