@@ -55,6 +55,53 @@ const orderItemSchema = new mongoose.Schema(
   },
 );
 
+const deliveryAddressSchema = new mongoose.Schema(
+  {
+    address: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    contactName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    contactPhone: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    instructions: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    location: {
+      type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point",
+      },
+
+      coordinates: {
+        type: [Number],
+        validate: {
+          validator(value) {
+            return value === null || value.length === 2;
+          },
+          message: "Coordinates must contain [longitude, latitude].",
+        },
+      },
+    },
+  },
+  { _id: false },
+);
+
 const orderSchema = new mongoose.Schema(
   {
     orderNumber: {
@@ -105,7 +152,7 @@ const orderSchema = new mongoose.Schema(
 
     paymentStatus: {
       type: String,
-      enum: ["PENDING", "PAID", "FAILED", "REFUNDED"],
+      enum: ["PENDING", "PAID", "FAILED","REFUND_PENDING", "REFUNDED"],
       default: "PENDING",
     },
 
@@ -126,57 +173,49 @@ const orderSchema = new mongoose.Schema(
         "CONFIRMED",
         "PROCESSING",
         "READY",
+        "OUT_FOR_DELIVERY",
         "COMPLETED",
         "CANCELLED",
       ],
       default: "PENDING",
     },
 
+    fulfillmentType: {
+      type: String,
+      enum: ["TAKEAWAY", "DELIVERY"],
+      default: "DELIVERY",
+      required: true,
+    },
+
     deliveryAddress: {
-      address: {
-        type: String,
-        required: true,
-        trim: true,
+      type: deliveryAddressSchema,
+
+      required: function () {
+        return this.fulfillmentType === "DELIVERY";
       },
 
-      contactName: {
-        type: String,
-        required: true,
-        trim: true,
-      },
-
-      contactPhone: {
-        type: String,
-        required: true,
-        trim: true,
-      },
-
-      instructions: {
-        type: String,
-        default: "",
-        trim: true,
-      },
-
-      location: {
-        type: {
-          type: String,
-          enum: ["Point"],
-          default: "Point",
-          required: true,
-        },
-
-        coordinates: {
-          type: [Number], // [longitude, latitude]
-          required: true,
-          validate: {
-            validator: (value) => value.length === 2,
-            message: "Coordinates must contain [longitude, latitude].",
-          },
-        },
-      },
+      default: undefined,
     },
 
     cancelledAt: Date,
+
+    //soft-delete fields
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
+
+    deletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
 
     completedAt: Date,
   },
