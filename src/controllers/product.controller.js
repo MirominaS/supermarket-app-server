@@ -12,11 +12,14 @@ export const createProduct = async (req, res) => {
   try {
     const {
       name,
+      brand,
       description,
       category,
+      subCategory,
       imageId,
       hasVariants,
       price,
+      compareAtPrice,
       costPrice,
       stock,
       unit,
@@ -38,11 +41,14 @@ export const createProduct = async (req, res) => {
 
     const product = await createProductService({
       name,
+      brand,
       description,
       category,
+      subCategory,
       image: imageId,
       hasVariants,
       price,
+      compareAtPrice,
       costPrice,
       stock,
       unit,
@@ -104,9 +110,7 @@ export const updateProduct = async (req, res) => {
   try {
     if (
       req.body.category &&
-      !mongoose.Types.ObjectId.isValid(
-        req.body.category
-      )
+      !mongoose.Types.ObjectId.isValid(req.body.category)
     ) {
       return res.status(400).json({
         success: false,
@@ -114,11 +118,7 @@ export const updateProduct = async (req, res) => {
       });
     }
 
-    const product =
-      await updateProductService(
-        req.params.id,
-        req.body
-      );
+    const product = await updateProductService(req.params.id, req.body);
 
     return res.status(200).json({
       success: true,
@@ -126,10 +126,7 @@ export const updateProduct = async (req, res) => {
       product,
     });
   } catch (error) {
-    console.error(
-      "Update product error:",
-      error
-    );
+    console.error("Update product error:", error);
 
     return res.status(400).json({
       success: false,
