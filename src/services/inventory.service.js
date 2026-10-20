@@ -83,69 +83,118 @@ export const adjustStock = async ({
 
   // PRODUCT WITHOUT VARIANTS
   if (!product.hasVariants) {
-    // Variant must not be supplied
     if (variantId) {
       throw new Error("This product does not have variants.");
     }
 
-    // Product stock must exist
     if (product.stock === null || product.stock === undefined) {
       throw new Error("Stock is not configured for this product.");
     }
 
-    const previousStock = product.stock;
-
-    let currentStock = previousStock;
+    let updatedProduct;
+    let previousStock;
+    let currentStock;
     let movementQuantity = quantity;
 
-    switch (movementType) {
-      case "IN":
-        currentStock = previousStock + quantity;
-        break;
+    if (movementType === "OUT") {
+      // Deduct only if enough stock remains.
+      updatedProduct = await Product.findOneAndUpdate(
+        {
+          _id: productId,
+          hasVariants: false,
+          stock: { $gte: quantity },
+        },
+        {
+          $inc: { stock: -quantity },
+        },
+        {
+          new: true,
+          session,
+          runValidators: true,
+        },
+      );
 
-      case "OUT":
-        if (previousStock < quantity) {
-          throw new Error(
-            `Insufficient stock. Available stock: ${previousStock}.`,
-          );
+      if (!updatedProduct) {
+        const latestProduct =
+          await Product.findById(productId).session(session);
+
+        if (!latestProduct) {
+          throw new Error("Product not found.");
         }
 
-        currentStock = previousStock - quantity;
-        break;
+        throw new Error(
+          `Insufficient stock. Available stock: ${latestProduct.stock}.`,
+        );
+      }
 
-      case "RETURN":
-        currentStock = previousStock + quantity;
-        break;
+      currentStock = updatedProduct.stock;
+      previousStock = currentStock + quantity;
+    } else if (movementType === "IN" || movementType === "RETURN") {
+      updatedProduct = await Product.findOneAndUpdate(
+        {
+          _id: productId,
+          hasVariants: false,
+        },
+        {
+          $inc: { stock: quantity },
+        },
+        {
+          new: true,
+          session,
+          runValidators: true,
+        },
+      );
 
-      case "ADJUSTMENT":
-        if (newStock === undefined || newStock === null) {
-          throw new Error("newStock is required for stock adjustment.");
-        }
+      if (!updatedProduct) {
+        throw new Error("Product not found.");
+      }
 
-        if (!Number.isInteger(newStock) || newStock < 0) {
-          throw new Error("New stock must be a non-negative integer.");
-        }
+      currentStock = updatedProduct.stock;
+      previousStock = currentStock - quantity;
+    } else if (movementType === "ADJUSTMENT") {
+      if (
+        newStock === undefined ||
+        newStock === null ||
+        !Number.isInteger(newStock) ||
+        newStock < 0
+      ) {
+        throw new Error("New stock must be a non-negative integer.");
+      }
 
-        currentStock = newStock;
+      previousStock = product.stock;
 
-        movementQuantity = Math.abs(previousStock - currentStock);
+      updatedProduct = await Product.findOneAndUpdate(
+        {
+          _id: productId,
+          hasVariants: false,
+          stock: previousStock,
+        },
+        {
+          $set: { stock: newStock },
+        },
+        {
+          new: true,
+          session,
+          runValidators: true,
+        },
+      );
 
-        break;
+      if (!updatedProduct) {
+        throw new Error("Stock changed during adjustment. Please try again.");
+      }
 
-      default:
-        throw new Error("Invalid movement type.");
+      currentStock = updatedProduct.stock;
+      movementQuantity = Math.abs(previousStock - currentStock);
+    } else {
+      throw new Error("Invalid movement type.");
     }
 
-    if (movementType === "ADJUSTMENT" && previousStock === currentStock) {
-      return product;
+    if (previousStock === currentStock) {
+      return updatedProduct;
     }
-
-    product.stock = currentStock;
-
-    await product.save({ session });
 
     await createStockMovement({
-      product: product._id,
+      product: updatedProduct._id,
       variant: null,
       movementType,
       quantity: movementQuantity,
@@ -159,8 +208,10 @@ export const adjustStock = async ({
       session,
     });
 
-    return product;
+    return updatedProduct;
   }
+
+  // PRODUCT WITH VARIANTS
 
   // PRODUCT WITH VARIANTS
   if (!variantId) {
@@ -176,60 +227,125 @@ export const adjustStock = async ({
     throw new Error("Product variant not found.");
   }
 
-  const previousStock = variant.stock;
-
-  let currentStock = previousStock;
+  let updatedVariant;
+  let previousStock;
+  let currentStock;
   let movementQuantity = quantity;
 
-  switch (movementType) {
-    case "IN":
-      currentStock = previousStock + quantity;
-      break;
+  // 1. Deduct stock atomically
+  if (movementType === "OUT") {
+    updatedVariant = await ProductVariant.findOneAndUpdate(
+      {
+        _id: variantId,
+        product: productId,
+        stock: { $gte: quantity },
+      },
+      {
+        $inc: { stock: -quantity },
+      },
+      {
+        new: true,
+        session,
+        runValidators: true,
+      },
+    );
 
-    case "OUT":
-      if (previousStock < quantity) {
-        throw new Error(
-          `Insufficient stock. Available stock: ${previousStock}.`,
-        );
+    if (!updatedVariant) {
+      const latestVariant = await ProductVariant.findOne({
+        _id: variantId,
+        product: productId,
+      }).session(session);
+
+      if (!latestVariant) {
+        throw new Error("Product variant not found.");
       }
 
-      currentStock = previousStock - quantity;
-      break;
+      throw new Error(
+        `Insufficient stock. Available stock: ${latestVariant.stock}.`,
+      );
+    }
 
-    case "RETURN":
-      currentStock = previousStock + quantity;
-      break;
-
-    case "ADJUSTMENT":
-      if (newStock === undefined || newStock === null) {
-        throw new Error("newStock is required for stock adjustment.");
-      }
-
-      if (!Number.isInteger(newStock) || newStock < 0) {
-        throw new Error("New stock must be a non-negative integer.");
-      }
-
-      currentStock = newStock;
-
-      movementQuantity = Math.abs(previousStock - currentStock);
-
-      break;
-
-    default:
-      throw new Error("Invalid movement type.");
+    currentStock = updatedVariant.stock;
+    previousStock = currentStock + quantity;
   }
 
-  if (movementType === "ADJUSTMENT" && previousStock === currentStock) {
-    return variant;
+  // 2. Add stock for incoming stock or returns
+  else if (movementType === "IN" || movementType === "RETURN") {
+    updatedVariant = await ProductVariant.findOneAndUpdate(
+      {
+        _id: variantId,
+        product: productId,
+      },
+      {
+        $inc: { stock: quantity },
+      },
+      {
+        new: true,
+        session,
+        runValidators: true,
+      },
+    );
+
+    if (!updatedVariant) {
+      throw new Error("Product variant not found.");
+    }
+
+    currentStock = updatedVariant.stock;
+    previousStock = currentStock - quantity;
   }
 
-  variant.stock = currentStock;
+  // 3. Set stock to a specific value
+  else if (movementType === "ADJUSTMENT") {
+    if (
+      newStock === undefined ||
+      newStock === null ||
+      !Number.isInteger(newStock) ||
+      newStock < 0
+    ) {
+      throw new Error("New stock must be a non-negative integer.");
+    }
 
-  await variant.save({ session });
+    previousStock = variant.stock;
 
+    updatedVariant = await ProductVariant.findOneAndUpdate(
+      {
+        _id: variantId,
+        product: productId,
+        stock: previousStock,
+      },
+      {
+        $set: { stock: newStock },
+      },
+      {
+        new: true,
+        session,
+        runValidators: true,
+      },
+    );
+
+    if (!updatedVariant) {
+      throw new Error(
+        "Stock changed during adjustment. Please try again.",
+      );
+    }
+
+    currentStock = updatedVariant.stock;
+    movementQuantity = Math.abs(previousStock - currentStock);
+  }
+
+  else {
+    throw new Error("Invalid movement type.");
+  }
+
+  // No need to record an adjustment if stock did not change.
+  if (previousStock === currentStock) {
+    return updatedVariant;
+  }
+
+  // 4. Save the inventory history
   await createStockMovement({
     product: product._id,
-    variant: variant._id,
+    variant: updatedVariant._id,
     movementType,
     quantity: movementQuantity,
     previousStock,
@@ -242,7 +358,7 @@ export const adjustStock = async ({
     session,
   });
 
-  return variant;
+  return updatedVariant;
 };
 
 // GET LOW STOCK PRODUCTS
@@ -434,11 +550,8 @@ export const getInventorySummaryService = async () => {
     },
   ]);
 
-  // -----------------------------------------------
   // Inventory value - variants
-  // -----------------------------------------------
-
-  const variantValueResult = await ProductVariant.aggregate([
+const variantValueResult = await ProductVariant.aggregate([
     {
       $match: {
         isActive: true,
