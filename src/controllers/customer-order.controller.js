@@ -6,11 +6,14 @@ import {
 } from "../services/customer-order.service.js";
 
 //create customer order
+
 export const createCustomerOrder = async (req, res) => {
   try {
     const {
       items,
       paymentMethod,
+      fulfillmentType,
+      deliveryAddressId,
       deliveryAddress,
     } = req.body;
 
@@ -28,10 +31,10 @@ export const createCustomerOrder = async (req, res) => {
       });
     }
 
-    if (!deliveryAddress) {
+    if (!fulfillmentType) {
       return res.status(400).json({
         success: false,
-        message: "Delivery address is required.",
+        message: "Fulfillment type is required.",
       });
     }
 
@@ -39,6 +42,8 @@ export const createCustomerOrder = async (req, res) => {
       customerId: req.user._id,
       items,
       paymentMethod,
+      fulfillmentType,
+      deliveryAddressId, 
       deliveryAddress,
     });
 
@@ -48,10 +53,7 @@ export const createCustomerOrder = async (req, res) => {
       order,
     });
   } catch (error) {
-    console.error(
-      "Create customer order error:",
-      error,
-    );
+    console.error("Create customer order error:", error);
 
     return res.status(400).json({
       success: false,
@@ -74,10 +76,7 @@ export const getCustomerOrders = async (req, res) => {
       orders,
     });
   } catch (error) {
-    console.error(
-      "Get customer orders error:",
-      error,
-    );
+    console.error("Get customer orders error:", error);
 
     return res.status(400).json({
       success: false,
@@ -99,10 +98,7 @@ export const getCustomerOrderById = async (req, res) => {
       order,
     });
   } catch (error) {
-    console.error(
-      "Get customer order error:",
-      error,
-    );
+    console.error("Get customer order error:", error);
 
     return res.status(404).json({
       success: false,
@@ -114,10 +110,7 @@ export const getCustomerOrderById = async (req, res) => {
 // cancel customer order
 export const cancelCustomerOrder = async (req, res) => {
   try {
-    const order = await cancelCustomerOrderService(
-      req.user._id,
-      req.params.id,
-    );
+    const order = await cancelCustomerOrderService(req.user._id, req.params.id);
 
     return res.status(200).json({
       success: true,
@@ -125,10 +118,7 @@ export const cancelCustomerOrder = async (req, res) => {
       order,
     });
   } catch (error) {
-    console.error(
-      "Cancel customer order error:",
-      error,
-    );
+    console.error("Cancel customer order error:", error);
 
     return res.status(400).json({
       success: false,

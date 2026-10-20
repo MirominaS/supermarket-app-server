@@ -121,6 +121,7 @@ const saleSchema = new mongoose.Schema(
       type: String,
       enum: [
         "PAID",
+        "REFUND_PENDING",
         "REFUNDED",
         "PARTIALLY_REFUNDED",
       ],
@@ -136,7 +137,7 @@ const saleSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
-
+saleSchema.index({ order: 1 }, { unique: true });
 const Sale = mongoose.model("Sale", saleSchema);
 
 export default Sale;

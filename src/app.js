@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import { stripeWebhook } from "./controllers/payment.controller.js";
 
 import adminRoutes from "./routes/admin.routes.js";
 import adminAuthRoutes from "./routes/auth.routes.js";
@@ -29,7 +30,30 @@ import paymentSettingsRoutes from "./routes/payment-settings.routes.js";
 import invoiceRoutes from "./routes/invoice.routes.js";
 
 const app = express();
-app.use(cors());
+app.post(
+  "/api/payments/webhook",
+  express.raw({ type: "application/json" }),
+  stripeWebhook,
+);
+
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:3001",
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Origin not allowed by CORS"));
+    },
+    credentials: true,
+  }),
+);
 
 app.use(express.json());
 

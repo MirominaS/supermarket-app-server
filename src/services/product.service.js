@@ -2,18 +2,37 @@ import Product from "../models/product.model.js";
 import Category from "../models/category.model.js";
 import Media from "../models/media.model.js";
 import ProductVariant from "../models/product-variant.model.js";
-import {
-  getCache,
-  setCache,
-} from "./cache.service.js";
-
+import { getCache, setCache } from "./cache.service.js";
+import { generateUniqueSlug } from "../utils/slug.util.js";
 import { productCacheKeys } from "../utils/product-cache-key.js";
 
 export const createProductService = async (productData) => {
-  const category = await Category.findById(productData.category);
+  const category = await Category.findOne({
+    _id: productData.category,
+    parentCategory: null,
+  });
 
   if (!category) {
-    throw new Error("Category not found.");
+    throw new Error("Please select a valid main category.");
+  }
+
+  let subCategory = null;
+
+  if (
+    productData.subCategory !== undefined &&
+    productData.subCategory !== null &&
+    productData.subCategory !== ""
+  ) {
+    subCategory = await Category.findOne({
+      _id: productData.subCategory,
+      parentCategory: category._id,
+    });
+
+    if (!subCategory) {
+      throw new Error(
+        "The selected subcategory does not belong to the selected main category.",
+      );
+    }
   }
 
   // Validate product image
@@ -29,6 +48,8 @@ export const createProductService = async (productData) => {
       throw new Error("Invalid product image.");
     }
   }
+
+  const slug = await generateUniqueSlug(Product, productData.name);
 
   const hasVariants = productData.hasVariants === true;
 
@@ -64,16 +85,39 @@ export const createProductService = async (productData) => {
     }
   }
 
+  let compareAtPrice = null;
+
+  if (
+    productData.compareAtPrice !== undefined &&
+    productData.compareAtPrice !== null &&
+    productData.compareAtPrice !== ""
+  ) {
+    compareAtPrice = Number(productData.compareAtPrice);
+
+    if (!Number.isFinite(compareAtPrice) || compareAtPrice < 0) {
+      throw new Error("Compare-at price must be a valid non-negative number.");
+    }
+
+    if (!hasVariants && compareAtPrice <= Number(productData.price)) {
+      throw new Error(
+        "Compare-at price must be greater than the selling price.",
+      );
+    }
+  }
+
   const product = await Product.create({
     name: productData.name,
+    brand: productData.brand?.trim() || "",
     description: productData.description,
-    category: productData.category,
+    category: category._id,
+    subCategory: subCategory?._id ?? null,
+    slug,
     image: productData.image,
 
     hasVariants,
 
-    // Only store these for variant-less products
     price: hasVariants ? null : productData.price,
+    compareAtPrice,
     costPrice: hasVariants ? null : (productData.costPrice ?? 0),
     stock: hasVariants ? null : productData.stock,
     unit: hasVariants ? null : productData.unit,
@@ -81,6 +125,7 @@ export const createProductService = async (productData) => {
 
   return await Product.findById(product._id)
     .populate("category")
+    .populate("subCategory")
     .populate("image");
 };
 
@@ -99,6 +144,7 @@ export const getProductsService = async () => {
 
   const products = await Product.find()
     .populate("category")
+      .populate("subCategory")
     .populate("image")
     .sort({
       createdAt: -1,
@@ -144,6 +190,7 @@ export const getProductByIdService = async (productId) => {
 
   const product = await Product.findById(productId)
     .populate("category")
+      .populate("subCategory")
     .populate("image");
 
   if (!product) {
@@ -179,12 +226,44 @@ export const updateProductService = async (productId, updateData) => {
   }
 
   // Validate category
-  if (updateData.category) {
-    const category = await Category.findById(updateData.category);
 
-    if (!category) {
-      throw new Error("Category not found.");
+  const nextCategoryId = updateData.category ?? product.category;
+
+  const nextSubCategoryId =
+    updateData.subCategory !== undefined
+      ? updateData.subCategory
+      : product.subCategory;
+
+  const category = await Category.findOne({
+    _id: nextCategoryId,
+    parentCategory: null,
+  });
+
+  if (!category) {
+    throw new Error("Please select a valid main category.");
+  }
+
+  let subCategory = null;
+
+  if (
+    nextSubCategoryId !== undefined &&
+    nextSubCategoryId !== null &&
+    nextSubCategoryId !== ""
+  ) {
+    subCategory = await Category.findOne({
+      _id: nextSubCategoryId,
+      parentCategory: category._id,
+    });
+
+    if (!subCategory) {
+      throw new Error(
+        "The selected subcategory does not belong to the selected main category.",
+      );
     }
+  }
+
+  if (updateData.brand !== undefined) {
+    product.brand = String(updateData.brand).trim();
   }
 
   // Validate image
@@ -207,11 +286,25 @@ export const updateProductService = async (productId, updateData) => {
   }
 
   // Basic fields
-  product.name = updateData.name ?? product.name;
-  product.description = updateData.description ?? product.description;
-  product.category = updateData.category ?? product.category;
-  product.image = updateData.image ?? product.image;
+  if (updateData.name !== undefined) {
+    const name = String(updateData.name).trim();
 
+    if (!name) {
+      throw new Error("Product name is required.");
+    }
+
+    product.name = name;
+
+    product.slug = await generateUniqueSlug(Product, name, product._id);
+  }
+
+  if (updateData.brand !== undefined) {
+    product.brand = String(updateData.brand ?? "").trim();
+  }
+  product.description = updateData.description ?? product.description;
+  product.category = category._id;
+  product.subCategory = subCategory?._id ?? null;
+  product.image = updateData.image ?? product.image;
   // Update active status
   if (typeof updateData.isActive === "boolean") {
     product.isActive = updateData.isActive;
@@ -268,10 +361,41 @@ export const updateProductService = async (productId, updateData) => {
     }
   }
 
+  if (updateData.compareAtPrice !== undefined) {
+    if (
+      updateData.compareAtPrice === null ||
+      updateData.compareAtPrice === ""
+    ) {
+      product.compareAtPrice = null;
+    } else {
+      const compareAtPrice = Number(updateData.compareAtPrice);
+
+      if (!Number.isFinite(compareAtPrice) || compareAtPrice < 0) {
+        throw new Error(
+          "Compare-at price must be a valid non-negative number.",
+        );
+      }
+
+      product.compareAtPrice = compareAtPrice;
+    }
+  }
+
+  // Validate the final selling price and compare-at price together.
+  if (
+    !product.hasVariants &&
+    product.compareAtPrice !== null &&
+    product.compareAtPrice !== undefined &&
+    product.price !== null &&
+    product.compareAtPrice <= product.price
+  ) {
+    throw new Error("Compare-at price must be greater than the selling price.");
+  }
+
   await product.save();
 
   return await Product.findById(product._id)
     .populate("category")
+      .populate("subCategory")
     .populate("image");
 };
 

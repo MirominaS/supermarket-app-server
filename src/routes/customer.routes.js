@@ -7,6 +7,7 @@ import {
   getCustomerSales,
   getCustomerSummary,
   updateCustomerStatus,
+  getCustomerClosureReasons,
 } from "../controllers/customer.controller.js";
 
 import { authenticate } from "../middleware/auth.middleware.js";
@@ -32,6 +33,9 @@ router.get("/:id/summary", getCustomerSummary);
 
 // Activate / deactivate customer
 router.patch("/:id/status", updateCustomerStatus);
+
+// Get customer account closure reasons and counts
+router.get("/closure-reasons", getCustomerClosureReasons);
 
 // Get customer by ID
 router.get("/:id", getCustomerById);

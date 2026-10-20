@@ -23,14 +23,17 @@ import {
 } from "../controllers/customer-auth.controller.js";
 import { authenticate } from "../middleware/auth.middleware.js";
 import { authorizeRoles } from "../middleware/role.middleware.js";
-
+import {
+  loginLimiter,
+  otpLimiter,
+} from "../middleware/rate-limit.middleware.js";
 const router = express.Router();
 
-router.post("/request-otp", requestRegisterOtp);
-router.post("/register/resend-otp", resendRegistrationOtp);
-router.post("/verify-otp", verifyRegisterOtp);
+router.post("/request-otp", otpLimiter, requestRegisterOtp);
+router.post("/register/resend-otp", otpLimiter, resendRegistrationOtp);
+router.post("/verify-otp", otpLimiter, verifyRegisterOtp);
 
-router.post("/login", loginCustomer);
+router.post("/login", loginLimiter, loginCustomer);
 router.post(
   "/logout",
   authenticate,
@@ -86,7 +89,7 @@ router.post(
   "/change-phone/resend-otp",
   authenticate,
   authorizeRoles("CUSTOMER"),
-  resendChangePhoneOtp
+  resendChangePhoneOtp,
 );
 
 router.post(

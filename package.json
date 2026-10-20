@@ -1,5 +1,5 @@
 {
-  "name": "hotel-booking-system-server",
+  "name": "supermarket-app-server",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -8,22 +8,21 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "seed:admin": "node src/seeders/admin.seeder.js",
-    "seed": "node src/seeders/seedAll.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/MirominaS/hotel-booking-system-server.git"
+    "url": "git+https://github.com/MirominaS/supermarket-app-server.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "bugs": {
-    "url": "https://github.com/MirominaS/hotel-booking-system-server/issues"
+    "url": "https://github.com/MirominaS/supermarket-app-server/issues"
   },
-  "homepage": "https://github.com/MirominaS/hotel-booking-system-server#readme",
+  "homepage": "https://github.com/MirominaS/supermarket-app-server#readme",
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1070.0",
     "@aws-sdk/s3-request-presigner": "^3.1070.0",
@@ -35,6 +34,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.1",
     "google-auth-library": "^11.0.0",
     "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",

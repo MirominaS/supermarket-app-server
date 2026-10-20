@@ -8,6 +8,20 @@ const productSchema = new mongoose.Schema(
       trim: true,
     },
 
+    brand: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    slug: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      unique: true,
+      sparse: true,
+    },
+
     description: {
       type: String,
       default: "",
@@ -18,6 +32,12 @@ const productSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Category",
       required: true,
+    },
+
+    subCategory: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      default: null,
     },
 
     image: {
@@ -38,6 +58,13 @@ const productSchema = new mongoose.Schema(
       min: 0,
     },
 
+     compareAtPrice: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+
+    
     costPrice: {
       type: Number,
       default: null,

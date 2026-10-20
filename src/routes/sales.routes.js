@@ -17,7 +17,7 @@ const router = express.Router();
 
 // Protect all sales routes
 router.use(authenticate);
-router.use(authorizeRoles("ADMIN"));
+router.use(authorizeRoles("ADMIN", "MANAGER"));
 
 // Get all sales
 router.get("/", getSales);

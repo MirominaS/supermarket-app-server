@@ -3,6 +3,9 @@ import mongoose from "mongoose";
 import Product from "../models/product.model.js";
 import ProductVariant from "../models/product-variant.model.js";
 import Category from "../models/category.model.js";
+import { generateUniqueSlug } from "../utils/slug.util.js";
+import { deleteCache } from "./cache.service.js";
+import { productCacheKeys } from "../utils/product-cache-key.js";
 
 const isEmptyValue = (value) => {
   return value === null || value === undefined || String(value).trim() === "";
@@ -921,26 +924,45 @@ export const bulkImportProductsAndVariantsService = async (sheets) => {
     let createdVariants = [];
 
     await session.withTransaction(async () => {
-      const productsToInsert = validatedProducts.map((product) => ({
-        name: product.name,
-        description: product.description,
+      const productsToInsert = [];
+      const generatedSlugs = new Set();
 
-        category: product.category,
+      for (const product of validatedProducts) {
+        let slug = await generateUniqueSlug(Product, product.name);
+        let suffix = 2;
 
-        image: null,
+        // Prevent collisions between products in this same Excel import.
+        while (generatedSlugs.has(slug)) {
+          slug = await generateUniqueSlug(Product, `${product.name} ${suffix}`);
 
-        hasVariants: product.hasVariants,
+          suffix++;
+        }
 
-        price: product.hasVariants ? null : product.price,
+        generatedSlugs.add(slug);
 
-        costPrice: product.hasVariants ? null : product.costPrice,
+        productsToInsert.push({
+          name: product.name,
+          slug,
+          description: product.description,
+          brand: product.brand?.trim() || "",
+          category: product.category,
+          image: null,
 
-        stock: product.hasVariants ? null : product.stock,
+          hasVariants: product.hasVariants,
 
-        unit: product.hasVariants ? null : product.unit,
+          price: product.hasVariants ? null : product.price,
+          costPrice: product.hasVariants ? null : product.costPrice,
+          stock: product.hasVariants ? null : product.stock,
+          unit: product.hasVariants ? null : product.unit,
 
-        isActive: product.isActive,
-      }));
+          isActive: product.isActive,
+        });
+      }
+
+      createdProducts = await Product.insertMany(productsToInsert, {
+        session,
+        ordered: true,
+      });
 
       createdProducts = await Product.insertMany(productsToInsert, {
         session,
@@ -1005,6 +1027,8 @@ export const bulkImportProductsAndVariantsService = async (sheets) => {
       }
     });
 
+    await deleteCache(productCacheKeys.all);
+
     return {
       totalProductRows: validProductRows.length,
       totalVariantRows: validVariantRows.length,
@@ -1015,6 +1039,7 @@ export const bulkImportProductsAndVariantsService = async (sheets) => {
       importedProducts: createdProducts.map((product) => ({
         id: product._id,
         name: product.name,
+        slug: product.slug,
         hasVariants: product.hasVariants,
       })),
 

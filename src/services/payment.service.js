@@ -5,9 +5,13 @@ import { getStripeClient } from "../config/stripe.js";
 import { createNotification } from "./notification.service.js";
 import User from "../models/user.model.js";
 import { completeOrderService } from "./order-completion.service.js";
+import { getDecryptedWebhookSecretService } from "./payment-settings.service.js";
+import { refundOrderPaymentService } from "./refund.service.js";
+import escapeRegex from "../utils/escape-regex.js";
+import {createSaleFromOrder} from "./sales.service.js";
 
 export const createOrderCheckoutService = async (customerId, orderId) => {
-   const stripe = await getStripeClient();
+  const stripe = await getStripeClient();
   // Validate order ID
   if (!mongoose.Types.ObjectId.isValid(orderId)) {
     throw new Error("Invalid order ID.");
@@ -88,8 +92,241 @@ export const createOrderCheckoutService = async (customerId, orderId) => {
   };
 };
 
+const processSuccessfulCheckoutSession = async (session) => {
+  if (session.payment_status !== "paid") {
+    throw new Error("Payment has not been completed.");
+  }
+
+  const payment = await Payment.findOne({
+    stripeSessionId: session.id,
+  });
+
+  if (!payment) {
+    throw new Error("Payment not found.");
+  }
+
+  if (!session.payment_intent) {
+    throw new Error("Stripe payment intent not found.");
+  }
+
+  const stripe = await getStripeClient();
+
+  const paymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : session.payment_intent.id;
+
+  const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+  if (paymentIntent.status !== "succeeded") {
+    throw new Error("Stripe payment has not succeeded.");
+  }
+
+  let gateway = "CARD";
+
+  if (paymentIntent.payment_method) {
+    const paymentMethodId =
+      typeof paymentIntent.payment_method === "string"
+        ? paymentIntent.payment_method
+        : paymentIntent.payment_method.id;
+
+    const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId);
+
+    const wallet = paymentMethod.card?.wallet?.type;
+
+    if (wallet === "google_pay") {
+      gateway = "GOOGLE_PAY";
+    } else if (wallet === "apple_pay") {
+      gateway = "APPLE_PAY";
+    } else if (paymentMethod.type === "link") {
+      gateway = "LINK";
+    }
+  }
+
+  // Atomically mark the payment as paid only once.
+  const updatedPayment = await Payment.findOneAndUpdate(
+    {
+      _id: payment._id,
+      status: { $ne: "PAID" },
+    },
+    {
+      $set: {
+        status: "PAID",
+        transactionId: paymentIntent.id,
+        paidAt: new Date(),
+        gateway,
+      },
+    },
+    {
+      new: true,
+      runValidators: true,
+    },
+  );
+
+  // If another request already processed the payment,
+  // retrieve its current state.
+  const finalPayment = updatedPayment || (await Payment.findById(payment._id));
+
+  if (!finalPayment) {
+    throw new Error("Payment not found.");
+  }
+
+  const order = await Order.findById(finalPayment.order);
+
+  if (!order) {
+    throw new Error("Order not found.");
+  }
+
+  if (order.status === "CANCELLED") {
+    // Payment really succeeded in Stripe, but the order was cancelled.
+    // Do not confirm the order or create a normal sale.
+    finalPayment.status = "REFUND_PENDING";
+    finalPayment.transactionId = paymentIntent.id;
+    finalPayment.paidAt = finalPayment.paidAt || new Date();
+
+    await finalPayment.save();
+
+    order.paymentStatus = "REFUND_PENDING";
+    await order.save();
+
+    try {
+      await refundOrderPaymentService(order._id);
+    } catch (error) {
+      // Leave the refund pending so it can be retried.
+      console.error(
+        `Refund pending for cancelled order ${order.orderNumber}:`,
+        error.message,
+      );
+    }
+
+    return finalPayment;
+  }
+
+  if (order.paymentStatus !== "PAID" || order.status !== "CONFIRMED") {
+    order.paymentStatus = "PAID";
+    order.status = "CONFIRMED";
+
+    await order.save();
+  }
+
+  // Keep this operation safe to retry.
+  // It should not deduct stock or create duplicate records
+  // when called more than once for the same order.
+  await completeOrderService(order._id);
+
+  // Create the sale and invoice after successful payment.
+  // createSaleFromOrder checks whether a sale already exists.
+  await createSaleFromOrder(order);
+
+  // Send notifications only when this request first marked
+  // the payment as paid.
+  if (updatedPayment) {
+    await createNotification({
+      recipient: finalPayment.customer,
+      title: "Payment Successful",
+      message: `Your payment for order ${order.orderNumber} was successful.`,
+      type: "PAYMENT_SUCCESS",
+      data: {
+        orderId: order._id,
+        paymentId: finalPayment._id,
+      },
+    });
+
+    const admins = await User.find({
+      role: "ADMIN",
+    }).select("_id");
+
+    for (const admin of admins) {
+      await createNotification({
+        recipient: admin._id,
+        title: "New Online Payment",
+        message: `Order ${order.orderNumber} has been paid successfully.`,
+        type: "NEW_PAYMENT",
+        data: {
+          orderId: order._id,
+          paymentId: finalPayment._id,
+        },
+      });
+    }
+  }
+
+  return finalPayment;
+};
+
 export const paymentSuccessService = async (sessionId, customerId) => {
-   const stripe = await getStripeClient();
+  if (typeof sessionId !== "string" || !sessionId.trim()) {
+    throw new Error("A valid Stripe session ID is required.");
+  }
+
+  const stripe = await getStripeClient();
+
+  const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+  const payment = await Payment.findOne({
+    stripeSessionId: session.id,
+  });
+
+  if (!payment) {
+    throw new Error("Payment not found.");
+  }
+
+  // Verify that this payment belongs to the logged-in customer.
+  if (payment.customer.toString() !== customerId.toString()) {
+    throw new Error("Unauthorized.");
+  }
+
+  return await processSuccessfulCheckoutSession(session);
+};
+
+export const handleStripeWebhookService = async (rawBody, signature) => {
+  const stripe = await getStripeClient();
+  const webhookSecret = await getDecryptedWebhookSecretService();
+
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+  } catch {
+    const signatureError = new Error("Invalid Stripe webhook signature.");
+    signatureError.statusCode = 400;
+    throw signatureError;
+  }
+
+  // Handle completed checkout sessions and delayed payments
+  const supportedEvents = [
+    "checkout.session.completed",
+    "checkout.session.async_payment_succeeded",
+  ];
+
+  if (!supportedEvents.includes(event.type)) {
+    return {
+      received: true,
+      processed: false,
+    };
+  }
+
+  const session = event.data.object;
+
+  // A completed checkout session does not always mean the payment
+  // has been paid, particularly with delayed payment methods.
+  if (session.payment_status !== "paid") {
+    return {
+      received: true,
+      processed: false,
+    };
+  }
+
+  await processSuccessfulCheckoutSession(session);
+
+  return {
+    received: true,
+    processed: true,
+  };
+};
+
+/** 
+export const paymentSuccessService = async (sessionId, customerId) => {
+  const stripe = await getStripeClient();
   // Verify checkout session
   const session = await stripe.checkout.sessions.retrieve(sessionId);
 
@@ -145,9 +382,6 @@ export const paymentSuccessService = async (sessionId, customerId) => {
     throw new Error("Order not found.");
   }
 
- 
- 
-
   // Update payment
   payment.status = "PAID";
   payment.transactionId = paymentIntent.id;
@@ -195,6 +429,7 @@ export const paymentSuccessService = async (sessionId, customerId) => {
 
   return payment;
 };
+*/
 
 //admin
 export const getPaymentsService = async ({
@@ -234,15 +469,18 @@ export const getPaymentsService = async ({
   }
 
   // Customer search
-  if (customer) {
-    const regex = new RegExp(customer, "i");
+  if (typeof customer === "string" && customer.trim()) {
+    const normalizedCustomer = customer.trim();
 
-    const customers = await mongoose
-      .model("User")
-      .find({
-        $or: [{ fullName: regex }, { email: regex }],
-      })
-      .select("_id");
+    if (normalizedCustomer.length > 100) {
+      throw new Error("Customer search must not exceed 100 characters.");
+    }
+
+    const regex = new RegExp(escapeRegex(normalizedCustomer), "i");
+
+    const customers = await User.find({
+      $or: [{ fullName: regex }, { email: regex }],
+    }).select("_id");
 
     filter.customer = {
       $in: customers.map((c) => c._id),

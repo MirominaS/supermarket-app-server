@@ -5,18 +5,52 @@ export const escapeRegex = (value) => {
 };
 
 export const getCustomerCategoriesService = async () => {
-  return await Category.find({
+  return Category.find({
     isActive: true,
+    parentCategory: null,
   })
-    .select("name description image")
-    .sort({ name: 1 });
+    .select("name slug description image")
+    .sort({ name: 1 })
+    .lean();
 };
 
 export const getCustomerCategoryByIdService = async (categoryId) => {
   const category = await Category.findOne({
     _id: categoryId,
     isActive: true,
-  }).select("name description image");
+    parentCategory: null,
+  })
+    .select("name slug description image")
+    .lean();
+
+  if (!category) {
+    throw new Error("Category not found.");
+  }
+
+  category.subCategories = await Category.find({
+    parentCategory: category._id,
+    isActive: true,
+  })
+    .select("name slug description image parentCategory")
+    .sort({ name: 1 })
+    .lean();
+
+  return category;
+};
+
+export const getCustomerCategoryBySlugService = async (slug) => {
+  const normalizedSlug = String(slug || "")
+    .trim()
+    .toLowerCase();
+
+  if (!normalizedSlug) {
+    throw new Error("Category slug is required.");
+  }
+
+  const category = await Category.findOne({
+    slug: normalizedSlug,
+    isActive: true,
+  }).select("name slug description image");
 
   if (!category) {
     throw new Error("Category not found.");
@@ -33,6 +67,6 @@ export const searchCustomerCategoriesService = async (search) => {
     isActive: true,
     $or: [{ name: searchRegex }, { description: searchRegex }],
   })
-    .select("name description image")
+    .select("name slug description image")
     .sort({ name: 1 });
 };

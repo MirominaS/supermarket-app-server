@@ -5,10 +5,6 @@ import {
   getInventorySummaryService,
 } from "../services/inventory.service.js";
 
-// =====================================================
-// UPDATE STOCK
-// =====================================================
-
 export const updateStock = async (req, res) => {
   try {
     const {
@@ -66,10 +62,6 @@ export const updateStock = async (req, res) => {
   }
 };
 
-// =====================================================
-// GET LOW STOCK
-// =====================================================
-
 export const getLowStock = async (req, res) => {
   try {
     const threshold =
@@ -94,10 +86,6 @@ export const getLowStock = async (req, res) => {
     });
   }
 };
-
-// =====================================================
-// GET STOCK HISTORY
-// =====================================================
 
 export const getStockHistory = async (req, res) => {
   try {
@@ -130,10 +118,6 @@ export const getStockHistory = async (req, res) => {
     });
   }
 };
-
-// =====================================================
-// GET INVENTORY SUMMARY
-// =====================================================
 
 export const getInventorySummary = async (req, res) => {
   try {

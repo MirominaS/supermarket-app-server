@@ -2,6 +2,7 @@ import {
   createCategoryService,
   getCategoriesService,
   getCategoryByIdService,
+  getCategoryTreeService,
   updateCategoryService,
   deleteCategoryService,
   bulkImportCategoriesService,
@@ -9,7 +10,7 @@ import {
 
 export const createCategory = async (req, res) => {
   try {
-    const { name, description, image } = req.body;
+    const { name, description, image,parentCategory } = req.body;
 
     if (!name) {
       return res.status(400).json({
@@ -22,6 +23,7 @@ export const createCategory = async (req, res) => {
       name,
       description,
       image,
+      parentCategory,
     });
 
     return res.status(201).json({
@@ -72,6 +74,26 @@ export const getCategoryById = async (req, res) => {
     return res.status(404).json({
       success: false,
       message: error.message,
+    });
+  }
+};
+
+
+export const getCategoryTree = async (req, res) => {
+  try {
+    const categories = await getCategoryTreeService();
+
+    return res.status(200).json({
+      success: true,
+      count: categories.length,
+      categories,
+    });
+  } catch (error) {
+    console.error("Get category tree error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch category tree.",
     });
   }
 };

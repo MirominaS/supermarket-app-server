@@ -13,7 +13,7 @@ import { authorizeRoles } from "../middleware/role.middleware.js";
 const router = express.Router();
 
 router.use(authenticate);
-router.use(authorizeRoles("ADMIN"));
+router.use(authorizeRoles("ADMIN", "MANAGER"));
 
 router.post("/adjust", updateStock);
 

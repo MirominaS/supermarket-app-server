@@ -335,6 +335,7 @@ export const getOrderStatisticsService = async ({
     confirmed: 0,
     processing: 0,
     ready: 0,
+    outForDelivery: 0,
     completed: 0,
     cancelled: 0,
   };
@@ -359,6 +360,10 @@ export const getOrderStatisticsService = async ({
 
       case "READY":
         statistics.ready = count;
+        break;
+
+      case "OUT_FOR_DELIVERY":
+        statistics.outForDelivery = count;
         break;
 
       case "COMPLETED":
