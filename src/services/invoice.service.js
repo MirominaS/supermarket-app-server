@@ -2,12 +2,22 @@ import mongoose from "mongoose";
 import Invoice from "../models/invoice.model.js";
 import Sale from "../models/sale.model.js";
 import Order from "../models/order.model.js";
+import Counter from "../models/counter.model.js";
 
 // Generate invoice number
-const generateInvoiceNumber = async () => {
-  const count = await Invoice.countDocuments();
+const generateInvoiceNumber = async (session = null) => {
+  const counter = await Counter.findOneAndUpdate(
+    { _id: "invoiceNumber" },
+    { $inc: { seq: 1 } },
+    {
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true,
+      ...(session ? { session } : {}),
+    },
+  );
 
-  return `INV-${String(count + 1).padStart(5, "0")}`;
+  return `INV-${String(counter.seq).padStart(5, "0")}`;
 };
 
 // Create invoice from sale
@@ -70,7 +80,7 @@ export const createInvoiceFromSale = async (saleId, session = null) => {
   }
 
   // Generate invoice number
-  const invoiceNumber = await generateInvoiceNumber();
+const invoiceNumber = await generateInvoiceNumber(session);  
 
   const invoiceData = {
     invoiceNumber,
