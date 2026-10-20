@@ -14,18 +14,18 @@ import { authorizeRoles } from "../middleware/role.middleware.js";
 const router = express.Router();
 
 // Create offer
-router.post("/", authenticate, authorizeRoles("ADMIN"), createOffer);
+router.post("/", authenticate, authorizeRoles("ADMIN", "MANAGER"), createOffer);
 
 // Get all active offers
-router.get("/", authenticate, authorizeRoles("ADMIN"), getOffers);
+router.get("/", authenticate, authorizeRoles("ADMIN", "MANAGER"), getOffers);
 
 // Get offer by ID
-router.get("/:id", authenticate, authorizeRoles("ADMIN"), getOfferById);
+router.get("/:id", authenticate, authorizeRoles("ADMIN", "MANAGER"), getOfferById);
 
 // Update offer
-router.put("/:id", authenticate, authorizeRoles("ADMIN"), updateOffer);
+router.put("/:id", authenticate, authorizeRoles("ADMIN", "MANAGER"), updateOffer);
 
 // Soft delete offer
-router.delete("/:id", authenticate, authorizeRoles("ADMIN"), deleteOffer);
+router.delete("/:id", authenticate, authorizeRoles("ADMIN", "MANAGER"), deleteOffer);
 
 export default router;
