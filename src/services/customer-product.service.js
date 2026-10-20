@@ -2,12 +2,15 @@ import mongoose from "mongoose";
 import Product from "../models/product.model.js";
 import ProductVariant from "../models/product-variant.model.js";
 import { enrichCustomerProductsWithOffers } from "../utils/enrich-customer-products.js";
+import Category from "../models/category.model.js";
+import escapeRegex from "../utils/escape-regex.js";
 
 export const getCustomerProductsService = async ({
   page = 1,
   limit = 10,
   search,
   category,
+  brand,
   sort = "newest",
 }) => {
   page = Number(page);
@@ -25,21 +28,58 @@ export const getCustomerProductsService = async ({
     isActive: true,
   };
 
-  // Search
-  if (search) {
+  // Safe product-name search
+  if (typeof search === "string" && search.trim()) {
+    const normalizedSearch = search.trim();
+
+    if (normalizedSearch.length > 100) {
+      throw new Error("Search query must not exceed 100 characters.");
+    }
+
     filter.name = {
-      $regex: search.trim(),
+      $regex: escapeRegex(normalizedSearch),
       $options: "i",
     };
   }
 
   // Category filter
   if (category) {
-    if (!mongoose.Types.ObjectId.isValid(category)) {
-      throw new Error("Invalid category.");
+    const normalizedCategory = String(category).trim();
+
+    let categoryId;
+
+    if (mongoose.Types.ObjectId.isValid(normalizedCategory)) {
+      // Keep compatibility with existing ID-based filtering.
+      categoryId = normalizedCategory;
+    } else {
+      // Also support category slugs.
+      const foundCategory = await Category.findOne({
+        slug: normalizedCategory.toLowerCase(),
+        isActive: true,
+      }).select("_id");
+
+      if (!foundCategory) {
+        throw new Error("Category not found.");
+      }
+
+      categoryId = foundCategory._id;
     }
 
-    filter.category = category;
+    filter.category = categoryId;
+  }
+
+  // Brand filter: literal, case-insensitive match
+  if (brand && String(brand).trim()) {
+    const normalizedBrand = String(brand).trim();
+
+    if (normalizedBrand.length > 100) {
+      throw new Error("Brand must not exceed 100 characters.");
+    }
+
+    filter.brand = {
+      $regex: `^${escapeRegex(normalizedBrand)}$`,
+      $options: "i",
+    };
   }
 
   const availableVariantProducts = await ProductVariant.distinct("product", {
@@ -210,6 +250,27 @@ export const getCustomerProductByIdService = async (productId) => {
   return enrichedProduct;
 };
 
+export const getCustomerProductBySlugService = async (slug) => {
+  const normalizedSlug = String(slug || "")
+    .trim()
+    .toLowerCase();
+
+  if (!normalizedSlug) {
+    throw new Error("Product slug is required.");
+  }
+
+  const product = await Product.findOne({
+    slug: normalizedSlug,
+    isActive: true,
+  }).select("_id");
+
+  if (!product) {
+    throw new Error("Product not found.");
+  }
+
+  return await getCustomerProductByIdService(product._id.toString());
+};
+
 export const searchCustomerProductsService = async ({
   q,
   page = 1,
@@ -230,7 +291,17 @@ export const searchCustomerProductsService = async ({
     throw new Error("Invalid limit.");
   }
 
-  const searchRegex = new RegExp(q.trim(), "i");
+  if (typeof q !== "string" || !q.trim()) {
+  throw new Error("Search query is required.");
+}
+
+const normalizedQuery = q.trim();
+
+if (normalizedQuery.length > 100) {
+  throw new Error("Search query must not exceed 100 characters.");
+}
+
+const searchRegex = new RegExp(escapeRegex(normalizedQuery), "i");
 
   const filter = {
     isActive: true,
@@ -241,6 +312,7 @@ export const searchCustomerProductsService = async ({
       {
         description: searchRegex,
       },
+      { brand: searchRegex },
     ],
   };
 
@@ -255,8 +327,10 @@ export const searchCustomerProductsService = async ({
 
   const totalPages = Math.ceil(total / limit);
 
+  const enrichedProducts = await enrichCustomerProductsWithOffers(products);
+
   return {
-    products,
+    enrichedProducts,
     pagination: {
       total,
       page,
@@ -266,4 +340,16 @@ export const searchCustomerProductsService = async ({
       hasPrev: page > 1,
     },
   };
+};
+
+export const getCustomerBrandsService = async () => {
+  const brands = await Product.distinct("brand", {
+    isActive: true,
+    brand: { $nin: ["", null] },
+  });
+
+  return brands
+    .filter((brand) => typeof brand === "string" && brand.trim())
+    .map((brand) => brand.trim())
+    .sort((a, b) => a.localeCompare(b));
 };
