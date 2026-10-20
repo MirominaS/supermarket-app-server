@@ -5,6 +5,7 @@ import {
   getCustomerSalesService,
   getCustomerSummaryService,
   updateCustomerStatusService,
+  getCustomerClosureReasonsService,
 } from "../services/customer.service.js";
 
 // Get all customers
@@ -148,6 +149,24 @@ export const updateCustomerStatus = async (req, res) => {
     return res.status(400).json({
       success: false,
       message: error.message,
+    });
+  }
+};
+
+export const getCustomerClosureReasons = async (req, res) => {
+  try {
+    const result = await getCustomerClosureReasonsService();
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    console.error("Get customer closure reasons error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to retrieve customer closure reasons.",
     });
   }
 };
