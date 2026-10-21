@@ -4,17 +4,20 @@
 | Name | Method | API | Body |
 | --- | --- | --- | --- |
 | Register-Request OTP | `POST` | `http://localhost:5007/api/customer/auth/request-otp` | `{"fullName": "FULL_NAME", "email": "test@gmail.com", "phoneNumber": "0771234578", "password": "Password123#", "verificationType": "EMAIL"}` |
+| Register-Resend OTP | `POST` | `http://localhost:5007/api/customer/auth/register/resend-otp` | `{"email": "test@example.com",  "verificationType": "EMAIL"}` |
 | Register-Verify OTP | `POST` | `http://localhost:5007/api/customer/auth/verify-otp` | `{"email": "test@gmail.com", "otp":"OTP",    "verificationType": "EMAIL"}`|
 | Login | `POST` | `http://localhost:5007/api/customer/auth/login` | `{ "email": "test@gmail.com",  "password": "Password123#"}` |
 | Logout | `POST` | `http://localhost:5007/api/customer/auth/logout` | - |
 | Get Customer Profile | `GET` | `http://localhost:5007/api/customer/auth/profile` | - |
 | Update Customer Profile | `PUT` | `http://localhost:5007/api/customer/auth/profile` | `{"fullName":"Sri Miro"}` |
 | Forget Password-Request OTP | `POST` | `http://localhost:5007/api/customer/auth/forgot-password/request-otp` | `{"email": "smirona16@gmail.com"}` |
+| Forget Password-Resend OTP | `POST` | `http://localhost:5007/api/customer/auth/forgot-password/resend-otp` | `{"email": "smirona16@gmail.com"}` |
 | Forget Password-Verify OTP | `POST` | `http://localhost:5007/api/customer/auth/forgot-password/verify-otp` | `{"email": "smirona16@gmail.com", "otp": "396867"}` |
 | Forget Password-Rest Password | `POST` | `http://localhost:5007/api/customer/auth/forgot-password/reset` | `{  "resetToken": "RESET_TOKEN",  "newPassword": NEW PASSWORD"}` |
 | Change Password | `POST` | `http://localhost:5007/api/customer/auth/change-password` | `{ "currentPassword": "123456789", "newPassword":"Password12#"}`|
 | Delete Account | `DELETE` | `http://localhost:5007/api/customer/auth/delete-account` | - |
 | Change Phone Number-Request OTP | `POST` | `http://localhost:5007/api/customer/auth/change-phone/request` | `-` |
+| Change Phone Number-Resend OTP | `POST` | `http://localhost:5007/api/customer/auth/change-phone/resend-otp` | `-` |
 | Change Phone Number-Verify OTP | `POST` | `http://localhost:5007/api/customer/auth/change-phone/verify` | `{"otp": "871383"}` |
 | Change Phone Number | `POST` | `http://localhost:5007/api/customer/auth/change-phone/confirm` | `{"verificationToken":"VERIFICATION_TOKEN", "phoneNumber": "0771234567"}` |
 
@@ -23,6 +26,7 @@
 | --- | --- | --- | --- |
 | Get All Categories | `GET` | `http://localhost:5007/api/customer/categories` | - |
 | Get Category by ID | `GET` | `http://localhost:5007/api/customer/categories/:id` | - |
+| Get Category by slug | `GET` | `http://localhost:5007/api/customer/categories/slug/:slug` | - |
 | Get All Categories | `GET` | `http://localhost:5007/api/customer/categories/search?q=beV` | `KEY:q`, `VALUE:beVerages` |
 
 ### Customer Offer
@@ -36,6 +40,8 @@
 | --- | --- | --- | --- |
 | Get All Products | `GET` | `http://localhost:5007/api/customer/products` | --- |
 | Get Product by ID | `GET` | `http://localhost:5007/api/customer/products/:id` | --- |
+| Get Product by slug | `GET` | `http://localhost:5007/api/customer/products/slug/:slug` | --- |
+| Get Product by brand| `GET` | `http://localhost:5007/api/customer/products/brands` | --- |
 | Get Product Pagination | `GET`| `http://localhost:5007/api/customer/products?page=1&limit=5` | --- |
 | Get Products sort(oldest, newest)| `GET` | `http://localhost:5007/api/customer/products?sort=oldest` | --- |
 | Get products by category | `GET` | `http://localhost:5007/api/customer/products?category=id` | --- |

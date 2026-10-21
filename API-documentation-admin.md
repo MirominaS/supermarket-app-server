@@ -54,7 +54,9 @@
 | Get   orders| `GET` | `http://localhost:5007/api/admin/orders` | - |
 | Get order by id | `GET`| `http://localhost:5007/api/admin/orders/:id`| - |
 | Update order status | `PATCH` | `http://localhost:5007/api/admin/orders/:id/status` | `{ "status": "READY"}` |
-| Export orders | `GET` | `http://localhost:5007/api/admin/orders/export` | --- |
+| Cancel order | `PATCH` | `http://localhost:5007/api/admin/orders/:id/cancel` | -|
+| Delete order | `DELETE` | `http://localhost:5007/api/admin/orders/:id` | - |
+| Export orders | `GET` | `http://localhost:5007/api/admin/orders/export` | - |
 
 ### Admin Payment Setting
 | Name | Method | API | Body |
@@ -167,3 +169,19 @@
 | Get profile image url | `GET` | `http://localhost:5007/api/media/profile/:id/url` | - |
 | Update image | `PATCH` | `http://localhost:5007/api/media/:id` | - |
 | Delete image | `DELETE` | `http://localhost:5007/api/media/:id` | - |
+
+### Customers
+| Name | Method | API | Body |
+| --- | --- | --- | --- |
+| Get all customers |`GET` | `http://localhost:5007/api/customers` | - |
+|Search customers | `GET` | `http://localhost:5007/api/customers?search=john` | - |
+|Get customers with pagination | `GET` | `http://localhost:5007/api/customers?page=1&limit=10` | - |
+| Filter active customers| `GET` | `http://localhost:5007/api/customers?isActive=true` |- |
+|Get customer by ID | `GET` | `http://localhost:5007/api/customers/:id` | - |
+| Get customer's orders | `GET` | `http://localhost:5007/api/customers/:id/orders` | - |
+| Get customer's sales | `GET` | `http://localhost:5007/api/customers/:id/sales` | - |
+|Get customer summary| `GET` | `http://localhost:5007/api/customers/:id/summary`| - |
+| Activate customer | `PATCH` | `http://localhost:5007/api/customers/:id/status` | `{"isActive": true}` |
+| Deactivate customer | `PATCH` | `http://localhost:5007/api/customers/:id/status` | `{"isActive": false}` |
+| Get account closure reasons and counts | `GET` | `http://localhost:5007/api/customers/closure-reasons` | - |
+| --- | --- | --- | --- |
